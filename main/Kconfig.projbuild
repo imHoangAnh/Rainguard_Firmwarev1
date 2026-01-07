@@ -1,0 +1,60 @@
+menu "RainGuard Configuration"
+
+    config WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
+        help
+            SSID (network name) for WiFi connection.
+
+    config WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+        help
+            WiFi password (WPA or WPA2).
+
+    config MQTT_BROKER_URI
+        string "MQTT Broker URI"
+        default "mqtts://broker.example.com:8883"
+        help
+            MQTT broker URI (mqtt:// or mqtts:// for SSL).
+
+    config MQTT_TOPIC_PREFIX
+        string "MQTT Topic Prefix"
+        default "train/data"
+        help
+            MQTT topic prefix for publishing sensor data.
+
+    config DEVICE_ID
+        string "Device ID"
+        default "rainguard_001"
+        help
+            Unique device identifier for MQTT topics.
+
+    config CLOUDINARY_UPLOAD_URL
+        string "Cloudinary Upload URL"
+        default "https://api.cloudinary.com/v1_1/your_cloud_name/image/upload"
+        help
+            Cloudinary API upload URL endpoint.
+
+    config CLOUDINARY_UPLOAD_PRESET
+        string "Cloudinary Upload Preset"
+        default "your_upload_preset"
+        help
+            Cloudinary upload preset name.
+
+    config SENSOR_INTERVAL_MS
+        int "Sensor Reading Interval (ms)"
+        default 5000
+        range 1000 60000
+        help
+            Interval in milliseconds between sensor readings.
+
+    config CAMERA_INTERVAL_MS
+        int "Camera Capture Interval (ms)"
+        default 30000
+        range 5000 300000
+        help
+            Interval in milliseconds between camera captures.
+
+endmenu
+

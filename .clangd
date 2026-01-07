@@ -1,0 +1,36 @@
+CompileFlags:
+    Remove: [-f*, -m*]
+    Add: 
+      - -IE:/New folder/Rainguard_Firmware
+      - -IE:/New folder/Rainguard_Firmware/components/system_i2c/include
+      - -IE:/New folder/Rainguard_Firmware/main/include
+      - -IE:/New folder/Rainguard_Firmware/components/app_config/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/driver/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/esp_common/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/freertos/FreeRTOS-Kernel/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/esp_hw_support/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/log/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/esp_rom/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/xtensa/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/xtensa/esp32s3/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/soc/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/soc/esp32s3/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/hal/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/hal/esp32s3/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/esp_system/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/esp_idf_version/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/esp_driver_i2c/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/esp_driver_i2c/include/driver
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/freertos/include
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/freertos/FreeRTOS-Kernel/include/freertos
+      - -DIDF_VER=\"v5.5.2\"
+      - -DESP_PLATFORM
+      - -DMBEDTLS_CONFIG_FILE=\"mbedtls/esp_crt_bundle.h\"
+      - -DHAVE_CONFIG_H
+      - -DCONFIG_LOG_MAXIMUM_LEVEL=5
+      - -std=gnu17
+
+Diagnostics:
+    UnusedIncludes: None
+    MissingIncludes: None

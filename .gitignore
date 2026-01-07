@@ -1,0 +1,131 @@
+# ESP-IDF Build System
+build/
+**/build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE - Visual Studio Code
+.vscode/
+*.code-workspace
+
+# IDE - Eclipse
+.project
+.cproject
+.settings/
+
+# IDE - CLion
+.idea/
+cmake-build-*/
+
+# IDE - KDevelop
+.kdev4/
+*.kdev4
+
+# OS - Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# OS - macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# OS - Linux
+*~
+.directory
+.Trash-*
+
+# ESP-IDF specific
+sdkconfig.old
+sdkconfig.defaults.old
+*.bak
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+log/
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+
+# Compiled files
+*.o
+*.a
+*.elf
+*.bin
+*.map
+*.obj
+
+# Dependencies (if using component manager, you might want to keep dependencies.lock)
+# Uncomment if you don't want to track managed components
+# managed_components/
+
+# Flash arguments (generated files)
+*-flash_args
+flash_args
+flasher_args.json
+
+# Partition table binaries
+partition_table/*.bin
+
+# Bootloader binaries
+bootloader/*.bin
+bootloader/*.elf
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+!CMakeLists.txt
+compile_commands.json
+
+# Ninja build files
+build.ninja
+rules.ninja
+.ninja_deps
+.ninja_log
+
+# GDB
+.gdbinit
+gdbinit/
+
+# Config environment
+config.env
+
+# Project description (generated)
+project_description.json
+
+# Linker scripts (generated)
+*.ld
+
+# Assembly files (generated)
+*.S
+!**/target/*.S
+
+# Test coverage
+*.gcov
+*.gcda
+*.gcno
+
+# Backup files
+*.backup
+*.orig
+
