@@ -18,7 +18,6 @@
 #include "cam_config.h"
 #include "driver/ledc.h"
 #include "esp_camera.h"
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "pin_config.h"
 #include <string.h>

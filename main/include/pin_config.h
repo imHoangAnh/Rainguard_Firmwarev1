@@ -19,8 +19,11 @@ extern "C" {
 #define I2C_FREQ_HZ         100000  // 100kHz
 
 // GPS Configuration (UART1)
-#define GPS_TX_PIN          43
-#define GPS_RX_PIN          44
+// Note: GPIO43/44 are used for Console UART (U0TXD/U0RXD)
+// Using GPIO41 (MTDI) and GPIO42 (MTMS) - JTAG pins repurposed for GPS
+// Warning: These are JTAG pins, JTAG debugging will not work when GPS is connected
+#define GPS_TX_PIN          41
+#define GPS_RX_PIN          42
 #define GPS_UART_NUM        UART_NUM_1
 #define GPS_BAUD_RATE       9600
 

@@ -31,6 +31,14 @@ i2c_master_bus_handle_t system_i2c_get_bus_handle(void);
  */
 void system_i2c_deinit(void);
 
+/**
+ * @brief Scan common I2C addresses for sensors
+ * @note Scans addresses commonly used by BME680, BME280, MPU6050, etc.
+ *       Results are printed to log output.
+ * @return Number of devices found
+ */
+uint8_t system_i2c_scan(void);
+
 #ifdef __cplusplus
 }
 #endif

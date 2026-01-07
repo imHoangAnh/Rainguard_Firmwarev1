@@ -4,12 +4,12 @@
  */
 
 #include "system_i2c.h"
-#include "pin_config.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "pin_config.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -31,12 +31,15 @@ bool system_i2c_init(void) {
   }
 
   // I2C bus configuration
+  // Note: Internal pullups are weak (~45kΩ), external 4.7kΩ pullups recommended
   i2c_master_bus_config_t i2c_bus_config = {
       .i2c_port = I2C_NUM_0,
       .sda_io_num = I2C_SDA_PIN,
       .scl_io_num = I2C_SCL_PIN,
       .clk_source = I2C_CLK_SRC_DEFAULT,
       .glitch_ignore_cnt = 7,
+      .intr_priority = 0,
+      .trans_queue_depth = 0,
       .flags =
           {
               .enable_internal_pullup = true,
@@ -53,6 +56,8 @@ bool system_i2c_init(void) {
 
   ESP_LOGI(TAG, "I2C bus initialized successfully (SDA=%d, SCL=%d, Freq=%d Hz)",
            I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ_HZ);
+  ESP_LOGW(TAG, "Note: External pull-up resistors (4.7k-10k) recommended for "
+                "reliable I2C");
   return true;
 }
 
@@ -75,4 +80,90 @@ void system_i2c_deinit(void) {
   }
 
   ESP_LOGI(TAG, "I2C bus deinitialized");
+}
+
+uint8_t system_i2c_scan(void) {
+  if (i2c_bus_handle == NULL) {
+    ESP_LOGE(TAG, "I2C bus not initialized");
+    return 0;
+  }
+
+  // Common sensor I2C addresses to scan
+  // BME680/BME280/BMP280: 0x76, 0x77
+  // MPU6050/MPU9250: 0x68, 0x69
+  // OLED SSD1306: 0x3C, 0x3D
+  // AHT10/AHT20: 0x38
+  // BH1750: 0x23, 0x5C
+  // INA219: 0x40-0x4F
+  static const uint8_t common_addresses[] = {
+      0x23, // BH1750 (ADDR LOW)
+      0x38, // AHT10/AHT20
+      0x3C, // OLED SSD1306
+      0x3D, // OLED SSD1306 (alt)
+      0x40, // INA219
+      0x44, // SHT31
+      0x45, // SHT31 (alt)
+      0x48, // ADS1115
+      0x5C, // BH1750 (ADDR HIGH)
+      0x68, // MPU6050/MPU9250/DS3231
+      0x69, // MPU6050 (AD0 HIGH)
+      0x76, // BME680/BME280/BMP280 (SDO LOW)
+      0x77, // BME680/BME280/BMP280 (SDO HIGH)
+  };
+
+  static const char *device_names[] = {
+      "BH1750",
+      "AHT10/AHT20",
+      "SSD1306 OLED",
+      "SSD1306 OLED",
+      "INA219",
+      "SHT31",
+      "SHT31",
+      "ADS1115",
+      "BH1750",
+      "MPU6050/MPU9250/DS3231",
+      "MPU6050 (AD0=HIGH)",
+      "BME680/BME280/BMP280",
+      "BME680/BME280/BMP280",
+  };
+
+  ESP_LOGI(TAG, "========== I2C SCAN START ==========");
+  ESP_LOGI(TAG, "Scanning %d common sensor addresses (SDA=%d, SCL=%d)...",
+           (int)sizeof(common_addresses), I2C_SDA_PIN, I2C_SCL_PIN);
+
+  uint8_t devices_found = 0;
+
+  // Temporarily reduce log level to suppress timeout errors during scan
+  esp_log_level_t old_level = esp_log_level_get("i2c.master");
+  esp_log_level_set("i2c.master", ESP_LOG_WARN);
+
+  for (size_t i = 0; i < sizeof(common_addresses); i++) {
+    uint8_t addr = common_addresses[i];
+
+    // Use i2c_master_probe to check if device responds
+    // Use longer timeout (100ms) for more reliable detection
+    esp_err_t ret = i2c_master_probe(i2c_bus_handle, addr, pdMS_TO_TICKS(100));
+
+    if (ret == ESP_OK) {
+      ESP_LOGI(TAG, "  [FOUND] 0x%02X - %s", addr, device_names[i]);
+      devices_found++;
+    }
+  }
+
+  // Restore log level
+  esp_log_level_set("i2c.master", old_level);
+
+  ESP_LOGI(TAG, "========== I2C SCAN COMPLETE ==========");
+  ESP_LOGI(TAG, "Total devices found: %d", devices_found);
+
+  if (devices_found == 0) {
+    ESP_LOGW(TAG, "No I2C devices found! Check:");
+    ESP_LOGW(TAG, "  - SDA/SCL wiring (SDA=%d, SCL=%d)", I2C_SDA_PIN,
+             I2C_SCL_PIN);
+    ESP_LOGW(TAG, "  - Pull-up resistors (4.7k-10k ohm) on SDA and SCL");
+    ESP_LOGW(TAG, "  - Power supply (3.3V) to sensors");
+    ESP_LOGW(TAG, "  - Sensor module connections");
+  }
+
+  return devices_found;
 }

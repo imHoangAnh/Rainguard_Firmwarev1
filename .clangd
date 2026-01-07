@@ -2,6 +2,8 @@ CompileFlags:
     Remove: [-f*, -m*]
     Add: 
       - -IE:/New folder/Rainguard_Firmware
+      - -IE:/New folder/Rainguard_Firmware/build/config
+      - -IC:/Users/mayti/esp/v5.5.2/esp-idf/components/newlib/platform_include
       - -IE:/New folder/Rainguard_Firmware/components/system_i2c/include
       - -IE:/New folder/Rainguard_Firmware/main/include
       - -IE:/New folder/Rainguard_Firmware/components/app_config/include
