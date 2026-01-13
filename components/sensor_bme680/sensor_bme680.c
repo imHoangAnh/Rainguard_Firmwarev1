@@ -589,20 +589,103 @@ bool sensor_bme680_read(bme680_data_t *data) {
       bme680_compensate_pressure(adc_press, t_fine) / 100.0f; // Convert to hPa
   data->humidity = bme680_compensate_humidity(adc_hum, t_fine);
   data->gas_resistance = gas_res;
+  data->gas_valid = (status & 0x20) != 0;   // Gas measurement valid
+  data->heat_stable = (status & 0x10) != 0; // Heater stability
   data->iaq =
       bme680_calculate_iaq(temp, data->humidity, gas_res, &data->iaq_accuracy);
 
   return true;
 }
 
+bool sensor_bme680_self_test(void) {
+  if (bme680_handle == NULL) {
+    ESP_LOGE(TAG, "Sensor not initialized");
+    return false;
+  }
+
+  // Read chip ID to verify communication
+  uint8_t chip_id = 0;
+  esp_err_t ret = bme680_read_reg(BME680_REG_CHIP_ID, &chip_id, 1);
+  if (ret != ESP_OK || chip_id != BME680_CHIP_ID) {
+    ESP_LOGE(TAG,
+             "Self-test failed: chip ID mismatch (got 0x%02X, expected 0x%02X)",
+             chip_id, BME680_CHIP_ID);
+    return false;
+  }
+
+  // Perform a test measurement
+  bme680_data_t test_data;
+  if (!sensor_bme680_read(&test_data)) {
+    ESP_LOGE(TAG, "Self-test failed: measurement error");
+    return false;
+  }
+
+  // Validate data ranges
+  if (test_data.temperature < -40.0f || test_data.temperature > 85.0f) {
+    ESP_LOGW(TAG, "Self-test warning: temperature out of range (%.2f°C)",
+             test_data.temperature);
+  }
+  if (test_data.humidity < 0.0f || test_data.humidity > 100.0f) {
+    ESP_LOGW(TAG, "Self-test warning: humidity out of range (%.2f%%)",
+             test_data.humidity);
+  }
+  if (test_data.pressure < 300.0f || test_data.pressure > 1100.0f) {
+    ESP_LOGW(TAG, "Self-test warning: pressure out of range (%.2f hPa)",
+             test_data.pressure);
+  }
+
+  ESP_LOGI(TAG,
+           "Self-test passed: T=%.2f°C, H=%.2f%%, P=%.2f hPa, Gas=%.0f Ohm",
+           test_data.temperature, test_data.humidity, test_data.pressure,
+           test_data.gas_resistance);
+
+  return true;
+}
+
+void sensor_bme680_reset_iaq_baseline(void) {
+  iaq_state.gas_baseline = 0.0f;
+  iaq_state.gas_baseline_count = 0;
+  iaq_state.gas_baseline_valid = false;
+  iaq_state.stabilization_count = 0;
+  ESP_LOGI(TAG, "IAQ baseline reset, recalibration will start");
+}
+
+bool sensor_bme680_get_status(bool *gas_valid, bool *heat_stable) {
+  if (bme680_handle == NULL) {
+    return false;
+  }
+
+  uint8_t status = 0;
+  esp_err_t ret = bme680_read_reg(BME680_REG_STATUS, &status, 1);
+  if (ret != ESP_OK) {
+    return false;
+  }
+
+  if (gas_valid != NULL) {
+    *gas_valid = (status & 0x20) != 0; // Gas measurement valid bit
+  }
+  if (heat_stable != NULL) {
+    *heat_stable = (status & 0x10) != 0; // Heater stability bit
+  }
+
+  return true;
+}
+
 void sensor_bme680_deinit(void) {
   if (bme680_handle != NULL) {
+    // Put sensor in sleep mode before deinit
+    sensor_bme680_set_power_mode(BME680_SLEEP_MODE);
+
     i2c_master_bus_handle_t i2c_bus = system_i2c_get_bus_handle();
     if (i2c_bus != NULL) {
       i2c_master_bus_rm_device(bme680_handle);
     }
     bme680_handle = NULL;
     calib_loaded = false;
+
+    // Reset IAQ state
+    sensor_bme680_reset_iaq_baseline();
+
     ESP_LOGI(TAG, "BME680 deinitialized");
   }
 }

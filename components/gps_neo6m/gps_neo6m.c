@@ -8,16 +8,20 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
-#include "pin_config.h"
-
 #include "freertos/task.h"
+#include "pin_config.h"
 #include <ctype.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 static const char *TAG = "gps_neo6m";
 static bool gps_initialized = false;
+
+// Track last valid fix time (must be declared before use)
+static uint32_t last_fix_time_ms = 0;
+static bool has_valid_fix = false;
 
 #define GPS_BUFFER_SIZE 512
 #define NMEA_SENTENCE_MAX_LEN 82
@@ -260,8 +264,9 @@ static bool parse_nmea_rmc_inline(const char *sentence, size_t len,
     size_t field_len = field_end - field_start;
 
     switch (field) {
-    case 1: // Time (store as integer HHMMSS)
+    case 1: // Time (HHMMSS.sss format)
       if (field_len >= 6) {
+        // Parse HHMMSS
         int time_val = 0;
         for (size_t i = 0; i < 6 && i < field_len; i++) {
           if (field_start[i] >= '0' && field_start[i] <= '9') {
@@ -269,6 +274,24 @@ static bool parse_nmea_rmc_inline(const char *sentence, size_t len,
           }
         }
         data->fix_time = time_val;
+        
+        // Parse individual fields for utc_time
+        data->utc_time.hour = (field_start[0] - '0') * 10 + (field_start[1] - '0');
+        data->utc_time.minute = (field_start[2] - '0') * 10 + (field_start[3] - '0');
+        data->utc_time.second = (field_start[4] - '0') * 10 + (field_start[5] - '0');
+        
+        // Parse milliseconds if present (after decimal point)
+        data->utc_time.millisecond = 0;
+        if (field_len > 7 && field_start[6] == '.') {
+          int ms = 0;
+          int divisor = 1;
+          for (size_t i = 7; i < field_len && field_start[i] >= '0' && field_start[i] <= '9'; i++) {
+            ms = ms * 10 + (field_start[i] - '0');
+            divisor *= 10;
+          }
+          // Convert to milliseconds (scale to 3 decimal places)
+          data->utc_time.millisecond = (ms * 1000) / divisor;
+        }
       }
       break;
     case 2: // Status (A=valid, V=invalid)
@@ -322,6 +345,13 @@ static bool parse_nmea_rmc_inline(const char *sentence, size_t len,
           }
         }
         data->fix_date = date_val;
+        
+        // Parse individual fields for utc_date
+        data->utc_date.day = (field_start[0] - '0') * 10 + (field_start[1] - '0');
+        data->utc_date.month = (field_start[2] - '0') * 10 + (field_start[3] - '0');
+        uint8_t year_2digit = (field_start[4] - '0') * 10 + (field_start[5] - '0');
+        // Convert YY to YYYY (assume 2000s for values 00-99)
+        data->utc_date.year = 2000 + year_2digit;
       }
       break;
     }
@@ -459,6 +489,12 @@ bool gps_neo6m_read(gps_data_t *data, uint32_t timeout_ms) {
     p = sentence_end + 2;
   }
 
+  // Update fix tracking
+  if (found_valid) {
+    has_valid_fix = true;
+    last_fix_time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+  }
+
   return found_valid;
 }
 
@@ -494,10 +530,101 @@ bool gps_neo6m_send_ubx_command(const uint8_t *cmd, size_t cmd_len) {
   return (written == (int)cmd_len);
 }
 
+bool gps_neo6m_set_update_rate(uint8_t rate_hz) {
+  if (!gps_initialized || rate_hz == 0 || rate_hz > 10) {
+    return false;
+  }
+
+  uint16_t meas_rate_ms = 1000 / rate_hz;
+  
+  // Build UBX CFG-RATE message
+  uint8_t cmd[14];
+  cmd[0] = 0xB5; cmd[1] = 0x62;  // Sync
+  cmd[2] = 0x06; cmd[3] = 0x08;  // CFG-RATE
+  cmd[4] = 0x06; cmd[5] = 0x00;  // Length = 6
+  cmd[6] = meas_rate_ms & 0xFF;
+  cmd[7] = (meas_rate_ms >> 8) & 0xFF;
+  cmd[8] = 0x01; cmd[9] = 0x00;  // navRate = 1
+  cmd[10] = 0x01; cmd[11] = 0x00; // timeRef = GPS
+  
+  // Calculate checksum
+  uint8_t ck_a = 0, ck_b = 0;
+  for (int i = 2; i < 12; i++) {
+    ck_a += cmd[i];
+    ck_b += ck_a;
+  }
+  cmd[12] = ck_a;
+  cmd[13] = ck_b;
+  
+  return gps_neo6m_send_ubx_command(cmd, sizeof(cmd));
+}
+
+bool gps_neo6m_set_nav_mode(gps_nav_mode_t mode) {
+  if (!gps_initialized) {
+    return false;
+  }
+
+  // Simplified CFG-NAV5 message for dynamic model only
+  uint8_t cmd[44];
+  memset(cmd, 0, sizeof(cmd));
+  
+  cmd[0] = 0xB5; cmd[1] = 0x62;  // Sync
+  cmd[2] = 0x06; cmd[3] = 0x24;  // CFG-NAV5
+  cmd[4] = 0x24; cmd[5] = 0x00;  // Length = 36
+  cmd[6] = 0x01; cmd[7] = 0x00;  // Mask: dynModel only
+  cmd[8] = mode;                  // dynModel
+  cmd[9] = 0x03;                  // fixMode: Auto 2D/3D
+  
+  // Calculate checksum
+  uint8_t ck_a = 0, ck_b = 0;
+  for (int i = 2; i < 42; i++) {
+    ck_a += cmd[i];
+    ck_b += ck_a;
+  }
+  cmd[42] = ck_a;
+  cmd[43] = ck_b;
+  
+  return gps_neo6m_send_ubx_command(cmd, sizeof(cmd));
+}
+
+bool gps_neo6m_cold_start(void) {
+  if (!gps_initialized) {
+    return false;
+  }
+
+  // CFG-RST with cold start
+  const uint8_t cmd[] = {
+    0xB5, 0x62,             // Sync
+    0x06, 0x04,             // CFG-RST
+    0x04, 0x00,             // Length = 4
+    0xFF, 0xFF,             // navBbrMask = 0xFFFF (clear all)
+    0x01,                   // resetMode = controlled reset
+    0x00,                   // reserved
+    0x0E, 0x66              // Checksum
+  };
+  
+  return gps_neo6m_send_ubx_command(cmd, sizeof(cmd));
+}
+
+bool gps_neo6m_has_fix(void) {
+  return has_valid_fix;
+}
+
+uint32_t gps_neo6m_time_since_fix(void) {
+  if (last_fix_time_ms == 0) {
+    return UINT32_MAX;
+  }
+  
+  uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+  return now - last_fix_time_ms;
+}
+
 void gps_neo6m_deinit(void) {
   if (gps_initialized) {
     uart_driver_delete(GPS_UART_NUM);
     gps_initialized = false;
+    has_valid_fix = false;
+    last_fix_time_ms = 0;
     ESP_LOGI(TAG, "GPS deinitialized");
   }
 }

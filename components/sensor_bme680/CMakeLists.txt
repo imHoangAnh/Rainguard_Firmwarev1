@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS "sensor_bme680.c"
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES driver freertos system_i2c app_config
+    REQUIRES esp_driver_i2c freertos
+    PRIV_REQUIRES system_i2c app_config esp_timer
 )
 
