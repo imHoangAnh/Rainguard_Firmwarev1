@@ -628,9 +628,9 @@ idf.py -p COM8 flash monitor
 This project is proprietary software. All rights reserved.
 
 ### Contact
-- **Developer**: [Your Name]
-- **Email**: [your.email@example.com]
-- **Project**: RainGuard Firmware v1.0
+- **Developer**: [Tran Hoang Anh]
+- **Email**: [trhoanganh2503@gmail.com]
+- **Project**: RainGuard Firmware
 
 ---
 
