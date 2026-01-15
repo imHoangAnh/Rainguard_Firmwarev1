@@ -90,4 +90,3 @@ esp_err_t system_i2c_remove_device(i2c_master_dev_handle_t dev_handle);
 #endif
 
 #endif // SYSTEM_I2C_H
-

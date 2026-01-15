@@ -65,8 +65,6 @@ bool system_i2c_init(void) {
 
   ESP_LOGI(TAG, "I2C bus initialized successfully (SDA=%d, SCL=%d, Freq=%d Hz)",
            I2C_SDA_PIN, I2C_SCL_PIN, I2C_FREQ_HZ);
-  ESP_LOGW(TAG, "Note: External pull-up resistors (4.7k-10k) recommended for "
-                "reliable I2C");
   return true;
 }
 
@@ -169,9 +167,6 @@ uint8_t system_i2c_scan(void) {
     ESP_LOGW(TAG, "No I2C devices found! Check:");
     ESP_LOGW(TAG, "  - SDA/SCL wiring (SDA=%d, SCL=%d)", I2C_SDA_PIN,
              I2C_SCL_PIN);
-    ESP_LOGW(TAG, "  - Pull-up resistors (4.7k-10k ohm) on SDA and SCL");
-    ESP_LOGW(TAG, "  - Power supply (3.3V) to sensors");
-    ESP_LOGW(TAG, "  - Sensor module connections");
   }
 
   return devices_found;

@@ -1,10 +1,11 @@
 /**
  * @file sensor_bme680.h
- * @brief BME680/BME688 environmental sensor driver with Bosch BSEC support
- * @details Optimized driver using official Bosch BME68x API
- * 
+ * @brief BME680/BME688 environmental sensor driver using official Bosch BME68x
+ * API
+ * @details Wrapper driver utilizing Bosch Sensortec BME68x sensor API
+ *
  * Features:
- * - Full T/P/H/G measurement support
+ * - Full T/P/H/G measurement support via official Bosch API
  * - IAQ (Indoor Air Quality) calculation
  * - Low power mode support
  * - Self-test capability
@@ -14,11 +15,19 @@
 #ifndef SENSOR_BME680_H
 #define SENSOR_BME680_H
 
+#include "bme68x.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+/**
+ * @brief Default I2C address (can be 0x76 or 0x77 depending on SDO pin)
+ */
+#ifndef BME680_I2C_ADDR
+#define BME680_I2C_ADDR BME68X_I2C_ADDR_HIGH // 0x77
 #endif
 
 /**
@@ -36,42 +45,41 @@ typedef struct {
 } bme680_data_t;
 
 /**
- * @brief BME680 power mode
+ * @brief BME680 oversampling configuration (maps to BME68x API)
  */
 typedef enum {
-  BME680_SLEEP_MODE = 0x00,
-  BME680_FORCED_MODE = 0x01,
-  BME680_NORMAL_MODE = 0x03
-} bme680_power_mode_t;
-
-/**
- * @brief BME680 oversampling configuration
- */
-typedef enum {
-  BME680_OS_NONE = 0x00,
-  BME680_OS_1X = 0x01,
-  BME680_OS_2X = 0x02,
-  BME680_OS_4X = 0x03,
-  BME680_OS_8X = 0x04,
-  BME680_OS_16X = 0x05
+  BME680_OS_NONE = BME68X_OS_NONE,
+  BME680_OS_1X = BME68X_OS_1X,
+  BME680_OS_2X = BME68X_OS_2X,
+  BME680_OS_4X = BME68X_OS_4X,
+  BME680_OS_8X = BME68X_OS_8X,
+  BME680_OS_16X = BME68X_OS_16X
 } bme680_oversampling_t;
 
 /**
- * @brief BME680 IIR filter coefficient
+ * @brief BME680 IIR filter coefficient (maps to BME68x API)
  */
 typedef enum {
-  BME680_FILTER_OFF = 0,
-  BME680_FILTER_SIZE_1 = 1,
-  BME680_FILTER_SIZE_3 = 2,
-  BME680_FILTER_SIZE_7 = 3,
-  BME680_FILTER_SIZE_15 = 4,
-  BME680_FILTER_SIZE_31 = 5,
-  BME680_FILTER_SIZE_63 = 6,
-  BME680_FILTER_SIZE_127 = 7
+  BME680_FILTER_OFF = BME68X_FILTER_OFF,
+  BME680_FILTER_SIZE_1 = BME68X_FILTER_SIZE_1,
+  BME680_FILTER_SIZE_3 = BME68X_FILTER_SIZE_3,
+  BME680_FILTER_SIZE_7 = BME68X_FILTER_SIZE_7,
+  BME680_FILTER_SIZE_15 = BME68X_FILTER_SIZE_15,
+  BME680_FILTER_SIZE_31 = BME68X_FILTER_SIZE_31,
+  BME680_FILTER_SIZE_63 = BME68X_FILTER_SIZE_63,
+  BME680_FILTER_SIZE_127 = BME68X_FILTER_SIZE_127
 } bme680_filter_t;
 
 /**
- * @brief Initialize BME680 sensor
+ * @brief BME680 power mode (maps to BME68x API)
+ */
+typedef enum {
+  BME680_SLEEP_MODE = BME68X_SLEEP_MODE,
+  BME680_FORCED_MODE = BME68X_FORCED_MODE
+} bme680_power_mode_t;
+
+/**
+ * @brief Initialize BME680 sensor using Bosch BME68x API
  * @return true on success, false on failure
  */
 bool sensor_bme680_init(void);
@@ -81,8 +89,8 @@ bool sensor_bme680_init(void);
  * @param temp_os Temperature oversampling
  * @param press_os Pressure oversampling
  * @param hum_os Humidity oversampling
- * @param filter Filter coefficient (0-7, higher = more filtering)
- * @param gas_wait_ms Gas sensor wait time in ms (0-4095ms)
+ * @param filter Filter coefficient
+ * @param gas_wait_ms Gas sensor wait time in ms
  * @param gas_heater_temp Gas heater temperature in Celsius (200-400°C)
  * @return true on success, false on failure
  */
@@ -92,7 +100,7 @@ bool sensor_bme680_configure(bme680_oversampling_t temp_os,
                              uint16_t gas_wait_ms, uint16_t gas_heater_temp);
 
 /**
- * @brief Read sensor data (optimized with gas sensor support)
+ * @brief Read sensor data using Bosch BME68x API
  * @param data Pointer to bme680_data_t structure to store readings
  * @return true on success, false on failure
  */
@@ -100,13 +108,13 @@ bool sensor_bme680_read(bme680_data_t *data);
 
 /**
  * @brief Set power mode
- * @param mode Power mode (SLEEP, FORCED, NORMAL)
+ * @param mode Power mode (SLEEP or FORCED)
  * @return true on success, false on failure
  */
 bool sensor_bme680_set_power_mode(bme680_power_mode_t mode);
 
 /**
- * @brief Perform sensor self-test
+ * @brief Perform sensor self-test using Bosch API
  * @return true if self-test passed, false otherwise
  */
 bool sensor_bme680_self_test(void);
@@ -123,6 +131,12 @@ void sensor_bme680_reset_iaq_baseline(void);
  * @return true on success
  */
 bool sensor_bme680_get_status(bool *gas_valid, bool *heat_stable);
+
+/**
+ * @brief Get BME68x device structure (for advanced usage)
+ * @return Pointer to bme68x_dev structure, or NULL if not initialized
+ */
+struct bme68x_dev *sensor_bme680_get_dev(void);
 
 /**
  * @brief Deinitialize sensor

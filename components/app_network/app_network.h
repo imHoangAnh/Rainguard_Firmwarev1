@@ -51,4 +51,3 @@ void app_network_deinit(void);
 #endif
 
 #endif // APP_NETWORK_H
-

@@ -1,6 +1,6 @@
 idf_component_register(
     SRCS "system_i2c.c"
-    INCLUDE_DIRS "include"
+    INCLUDE_DIRS "."
     REQUIRES esp_driver_i2c driver freertos
     PRIV_REQUIRES app_config
 )
