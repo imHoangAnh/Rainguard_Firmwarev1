@@ -28,7 +28,7 @@
 /*
  * CLOUDINARY CONFIGURATION
  */
-#define CLOUDINARY_UPLOAD_URL                                                  \
+#define CLOUDINARY_UPLOAD_URL \
   "https://api.cloudinary.com/v1_1/dp5wo5yjr/image/upload"
 
 #define CLOUDINARY_UPLOAD_PRESET "RainGuard"

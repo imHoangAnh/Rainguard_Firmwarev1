@@ -143,6 +143,12 @@ struct bme68x_dev *sensor_bme680_get_dev(void);
  */
 void sensor_bme680_deinit(void);
 
+/**
+ * @brief Debug function to print raw ADC data from sensor registers
+ * Call this after sensor_bme680_read() to see raw values for debugging
+ */
+void sensor_bme680_debug_raw_data(void);
+
 #ifdef __cplusplus
 }
 #endif

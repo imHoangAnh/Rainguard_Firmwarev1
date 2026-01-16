@@ -298,6 +298,17 @@ bool sensor_bme680_init(void) {
   ESP_LOGI(TAG, "Bosch BME68x API initialized (variant_id=0x%02X)",
            (unsigned int)bme68x_sensor.variant_id);
 
+  // Debug: Print calibration coefficients to verify they were read correctly
+  ESP_LOGI(TAG, "Calibration T: par_t1=%u, par_t2=%d, par_t3=%d",
+           bme68x_sensor.calib.par_t1, bme68x_sensor.calib.par_t2,
+           bme68x_sensor.calib.par_t3);
+  ESP_LOGI(TAG, "Calibration P: par_p1=%u, par_p2=%d, par_p3=%d",
+           bme68x_sensor.calib.par_p1, bme68x_sensor.calib.par_p2,
+           bme68x_sensor.calib.par_p3);
+  ESP_LOGI(TAG, "Calibration H: par_h1=%u, par_h2=%u, par_h3=%d",
+           bme68x_sensor.calib.par_h1, bme68x_sensor.calib.par_h2,
+           bme68x_sensor.calib.par_h3);
+
   // Configure default settings
   sensor_bme680_configure(sensor_config.temp_os, sensor_config.press_os,
                           sensor_config.hum_os, sensor_config.filter,
@@ -385,35 +396,92 @@ bool sensor_bme680_read(bme680_data_t *data) {
     return false;
   }
 
-  // Set forced mode to trigger measurement
-  int8_t rslt = bme68x_set_op_mode(BME68X_FORCED_MODE, &bme68x_sensor);
+  int8_t rslt;
+
+  // CRITICAL FIX: Re-apply FULL sensor configuration before EACH measurement
+  // The bme68x_set_heatr_conf() internally calls bme68x_set_op_mode(SLEEP)
+  // which may cause TPH oversampling settings to not be applied correctly
+  // in the next measurement cycle. We must reconfigure EVERYTHING.
+
+  // Step 1: Configure TPH oversampling settings
+  struct bme68x_conf conf = {0};
+  conf.os_temp = sensor_config.temp_os;
+  conf.os_pres = sensor_config.press_os;
+  conf.os_hum = sensor_config.hum_os;
+  conf.filter = sensor_config.filter;
+  conf.odr = BME68X_ODR_NONE; // No standby in forced mode
+
+  rslt = bme68x_set_conf(&conf, &bme68x_sensor);
+  if (rslt != BME68X_OK) {
+    ESP_LOGE(TAG, "Failed to set TPH config: %d", rslt);
+    return false;
+  }
+
+  // Step 2: Configure heater for gas measurement
+  if (sensor_config.gas_enabled) {
+    struct bme68x_heatr_conf heatr_conf = {0};
+    heatr_conf.enable = BME68X_ENABLE;
+    heatr_conf.heatr_temp = sensor_config.gas_heater_temp;
+    heatr_conf.heatr_dur = sensor_config.gas_wait_ms;
+
+    rslt =
+        bme68x_set_heatr_conf(BME68X_FORCED_MODE, &heatr_conf, &bme68x_sensor);
+    if (rslt != BME68X_OK) {
+      ESP_LOGE(TAG, "Failed to set heater config: %d", rslt);
+      return false;
+    }
+  }
+
+  // Step 3: Set forced mode to trigger a NEW measurement
+  rslt = bme68x_set_op_mode(BME68X_FORCED_MODE, &bme68x_sensor);
   if (rslt != BME68X_OK) {
     ESP_LOGE(TAG, "Failed to set forced mode: %d", rslt);
     return false;
   }
 
-  // Calculate measurement duration and wait
-  struct bme68x_conf conf;
-  bme68x_get_conf(&conf, &bme68x_sensor);
+  // Step 4: Calculate and wait for measurement duration
   uint32_t meas_dur =
       bme68x_get_meas_dur(BME68X_FORCED_MODE, &conf, &bme68x_sensor);
 
   // Add heater duration if gas is enabled
   if (sensor_config.gas_enabled) {
-    meas_dur += sensor_config.gas_wait_ms * 1000; // Convert to microseconds
+    meas_dur += sensor_config.gas_wait_ms * 1000; // Convert ms to us
   }
 
-  // Wait for measurement to complete (with small margin)
-  bme68x_sensor.delay_us(meas_dur + 1000, bme68x_sensor.intf_ptr);
+  // Wait for measurement to complete with extra margin (20ms) for reliability
+  bme68x_sensor.delay_us(meas_dur + 20000, bme68x_sensor.intf_ptr);
 
-  // Read data using Bosch API
+  // Step 5: Poll for new data with retries
   struct bme68x_data sensor_data[3];
   uint8_t n_data = 0;
+  uint8_t max_retries = 10;
 
-  rslt =
-      bme68x_get_data(BME68X_FORCED_MODE, sensor_data, &n_data, &bme68x_sensor);
-  if (rslt != BME68X_OK || n_data == 0) {
-    ESP_LOGE(TAG, "Failed to get data: rslt=%d, n_data=%d", rslt, n_data);
+  for (uint8_t retry = 0; retry < max_retries; retry++) {
+    rslt = bme68x_get_data(BME68X_FORCED_MODE, sensor_data, &n_data,
+                           &bme68x_sensor);
+
+    // Check if we got valid new data
+    if (rslt == BME68X_OK && n_data > 0) {
+      break; // Success - we have new data
+    }
+
+    // If warning indicates no new data, wait a bit and retry
+    if (rslt == BME68X_W_NO_NEW_DATA) {
+      ESP_LOGD(TAG, "No new data yet, retry %d/%d", retry + 1, max_retries);
+      bme68x_sensor.delay_us(10000, bme68x_sensor.intf_ptr); // Wait 10ms
+      continue;
+    }
+
+    // Any other error is a real failure
+    if (rslt != BME68X_OK && rslt != BME68X_W_NO_NEW_DATA) {
+      ESP_LOGE(TAG, "Failed to get data: rslt=%d", rslt);
+      return false;
+    }
+  }
+
+  // Final check if we got data
+  if (n_data == 0) {
+    ESP_LOGE(TAG, "No new data after %d retries", max_retries);
     return false;
   }
 
@@ -422,16 +490,29 @@ bool sensor_bme680_read(bme680_data_t *data) {
 
   // Copy data to output structure
 #ifdef BME68X_USE_FPU
+  // FPU mode: temperature is in Celsius, pressure in Pa, humidity in %
   data->temperature = d->temperature;
   data->humidity = d->humidity;
   data->pressure = d->pressure / 100.0f; // Convert Pa to hPa
   data->gas_resistance = d->gas_resistance;
 #else
+  // Integer mode: temperature in centidegrees, humidity in milli-percent
   data->temperature = d->temperature / 100.0f;
   data->humidity = d->humidity / 1000.0f;
   data->pressure = d->pressure / 100.0f; // Convert Pa to hPa
   data->gas_resistance = (float)d->gas_resistance;
 #endif
+
+  // Sanity check the readings - if values are clearly wrong, log a warning
+  if (data->temperature < -40.0f || data->temperature > 85.0f) {
+    ESP_LOGW(TAG, "Temperature out of range: %.2f°C", data->temperature);
+  }
+  if (data->humidity < 0.0f || data->humidity > 100.0f) {
+    ESP_LOGW(TAG, "Humidity out of range: %.2f%%", data->humidity);
+  }
+  if (data->pressure < 300.0f || data->pressure > 1100.0f) {
+    ESP_LOGW(TAG, "Pressure out of range: %.2f hPa", data->pressure);
+  }
 
   // Check validity flags
   data->gas_valid = (d->status & BME68X_GASM_VALID_MSK) != 0;
@@ -441,11 +522,13 @@ bool sensor_bme680_read(bme680_data_t *data) {
   data->iaq = calculate_iaq(data->temperature, data->humidity,
                             data->gas_resistance, &data->iaq_accuracy);
 
-  ESP_LOGD(
-      TAG,
-      "Read: T=%.2f°C, H=%.2f%%, P=%.2fhPa, Gas=%.0fΩ (valid=%d, stable=%d)",
-      data->temperature, data->humidity, data->pressure, data->gas_resistance,
-      data->gas_valid, data->heat_stable);
+  ESP_LOGI(TAG, "BME680 Raw: status=0x%02X, meas_idx=%d, gas_idx=%d", d->status,
+           d->meas_index, d->gas_index);
+  ESP_LOGI(TAG,
+           "BME680 Data: T=%.2f°C, H=%.2f%%, P=%.2fhPa, Gas=%.0fΩ (valid=%d, "
+           "stable=%d)",
+           data->temperature, data->humidity, data->pressure,
+           data->gas_resistance, data->gas_valid, data->heat_stable);
 
   return true;
 }
@@ -546,4 +629,52 @@ void sensor_bme680_deinit(void) {
 
     ESP_LOGI(TAG, "BME680 deinitialized");
   }
+}
+
+/**
+ * @brief Debug function to read and print raw sensor data registers
+ * This helps diagnose if raw ADC values are changing between reads
+ */
+void sensor_bme680_debug_raw_data(void) {
+  if (bme680_i2c_handle == NULL || !sensor_initialized) {
+    ESP_LOGE(TAG, "Sensor not initialized for debug");
+    return;
+  }
+
+  // Read raw field data from register 0x1D (BME68X_REG_FIELD0)
+  uint8_t buff[17] = {0};
+  int8_t rslt = bme68x_get_regs(BME68X_REG_FIELD0, buff, 17, &bme68x_sensor);
+  if (rslt != BME68X_OK) {
+    ESP_LOGE(TAG, "Failed to read raw registers: %d", rslt);
+    return;
+  }
+
+  // Parse raw ADC values (same as in read_field_data)
+  uint32_t adc_pres =
+      (uint32_t)(((uint32_t)buff[2] * 4096) | ((uint32_t)buff[3] * 16) |
+                 ((uint32_t)buff[4] / 16));
+  uint32_t adc_temp =
+      (uint32_t)(((uint32_t)buff[5] * 4096) | ((uint32_t)buff[6] * 16) |
+                 ((uint32_t)buff[7] / 16));
+  uint16_t adc_hum = (uint16_t)(((uint32_t)buff[8] * 256) | (uint32_t)buff[9]);
+  uint16_t adc_gas_low =
+      (uint16_t)((uint32_t)buff[13] * 4 | (((uint32_t)buff[14]) / 64));
+  uint16_t adc_gas_high =
+      (uint16_t)((uint32_t)buff[15] * 4 | (((uint32_t)buff[16]) / 64));
+  uint8_t gas_range = buff[14] & 0x0F;
+
+  ESP_LOGI(TAG, "=== RAW ADC DEBUG ===");
+  ESP_LOGI(TAG, "Status: 0x%02X, meas_index: %d, gas_index: %d", buff[0],
+           buff[1], buff[0] & 0x0F);
+  ESP_LOGI(TAG, "ADC Pressure: %lu (raw bytes: %02X %02X %02X)",
+           (unsigned long)adc_pres, buff[2], buff[3], buff[4]);
+  ESP_LOGI(TAG, "ADC Temperature: %lu (raw bytes: %02X %02X %02X)",
+           (unsigned long)adc_temp, buff[5], buff[6], buff[7]);
+  ESP_LOGI(TAG, "ADC Humidity: %u (raw bytes: %02X %02X)", adc_hum, buff[8],
+           buff[9]);
+  ESP_LOGI(TAG, "ADC Gas Low: %u, High: %u, Range: %d", adc_gas_low,
+           adc_gas_high, gas_range);
+  ESP_LOGI(TAG, "Gas status byte[14]: 0x%02X, byte[16]: 0x%02X", buff[14],
+           buff[16]);
+  ESP_LOGI(TAG, "=====================");
 }

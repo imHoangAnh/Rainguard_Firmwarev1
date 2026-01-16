@@ -22,7 +22,6 @@
 #include "sensor_mpu6050.h"
 #include "system_i2c.h"
 
-
 static const char *TAG = "main";
 
 // Task handles
@@ -54,6 +53,8 @@ static void sensor_task(void *pvParameters) {
                "BME680: IAQ=%.1f (accuracy:%d), gas_valid=%d, heat_stable=%d",
                bme_data.iaq, bme_data.iaq_accuracy, bme_data.gas_valid,
                bme_data.heat_stable);
+      // DEBUG: Print raw ADC data to diagnose static readings
+      sensor_bme680_debug_raw_data();
     } else {
       ESP_LOGW(TAG, "Failed to read BME680");
     }
