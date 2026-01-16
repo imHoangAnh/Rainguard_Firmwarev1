@@ -5,7 +5,7 @@
 Tài liệu này mô tả các thuật toán tối ưu hóa được triển khai cho ba cảm biến chính trong dự án RainGuard:
 - **Bosch BME680**: Cảm biến môi trường (nhiệt độ, độ ẩm, áp suất, khí VOC)
 - **MPU-6000/MPU6050**: Cảm biến IMU (gia tốc kế và con quay hồi chuyển)
-- **u-blox NEO-6M/7M**: Module GPS
+- **u-blox NEO-7M/7M**: Module GPS
 
 ## 1. Bosch BME680 - Tối Ưu Hóa
 
@@ -119,7 +119,7 @@ motion_detected = |accel_magnitude - 1.0g| > threshold
 - Sử dụng DLPF (Digital Low Pass Filter) để giảm nhiễu
 - Có thể bật cycle mode để tiết kiệm năng lượng khi không cần đọc liên tục
 
-## 3. u-blox NEO-6M/7M GPS - Tối Ưu Hóa
+## 3. u-blox NEO-7M/7M GPS - Tối Ưu Hóa
 
 ### 3.1. NMEA Parsing Tối Ưu
 
@@ -197,7 +197,7 @@ void sensor_task(void *pvParameters) {
         sensor_mpu6050_read(&mpu_data);
         
         // Đọc GPS (UART - không conflict)
-        gps_neo6m_read(&gps_data, 1000);
+        gps_neo7m_read(&gps_data, 1000);
         
         // Publish data
         // ...

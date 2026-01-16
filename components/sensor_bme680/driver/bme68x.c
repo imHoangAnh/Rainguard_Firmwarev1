@@ -162,7 +162,8 @@ int8_t bme68x_init(struct bme68x_dev *dev) {
   rslt = bme68x_get_regs(BME68X_REG_CHIP_ID, &dev->chip_id, 1, dev);
 
   if (rslt == BME68X_OK) {
-    if (dev->chip_id == BME68X_CHIP_ID) {
+    // Accept BME680 (0x61), BME688 (0x61), or compatible variants (0x8A)
+    if (dev->chip_id == BME68X_CHIP_ID || dev->chip_id == 0x8A) {
       /* Read Variant ID */
       rslt = read_variant_id(dev);
 

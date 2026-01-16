@@ -15,7 +15,7 @@
 // Component includes
 #include "app_network.h"
 #include "cam_config.h"
-#include "gps_neo6m.h"
+#include "gps_neo7m.h"
 #include "network_config.h"
 #include "pin_config.h"
 #include "sensor_bme680.h"
@@ -75,19 +75,31 @@ static void sensor_task(void *pvParameters) {
       ESP_LOGW(TAG, "Failed to read MPU6050");
     }
 
-    // Read GPS (optimized parsing, timeout 1 second)
-    if (gps_neo6m_read(&gps_data, 1000)) {
+    // Read GPS (NEO-7M with GLONASS support, timeout 1 second)
+    static uint32_t gps_fail_count = 0;
+    if (gps_neo7m_read(&gps_data, 1000)) {
+      gps_fail_count = 0; // Reset fail counter on success
       if (gps_data.valid) {
         ESP_LOGD(TAG,
                  "GPS: Lat=%.6f, Lon=%.6f, Alt=%.1fm, Speed=%.2f km/h, "
                  "Sats=%d, HDOP=%.1f",
                  gps_data.latitude, gps_data.longitude, gps_data.altitude,
-                 gps_data.speed, gps_data.satellites, gps_data.hdop);
+                 gps_data.speed_kmh, gps_data.satellites_used, gps_data.dop.hdop);
       } else {
-        ESP_LOGD(TAG, "GPS: No fix (Sats=%d)", gps_data.satellites);
+        ESP_LOGD(TAG, "GPS: No fix (Sats=%d)", gps_data.satellites_used);
       }
     } else {
-      ESP_LOGD(TAG, "GPS: No data");
+      gps_fail_count++;
+      ESP_LOGD(TAG, "GPS: No data (fail count: %lu)",
+               (unsigned long)gps_fail_count);
+
+      // Print detailed debug every 30 consecutive failures
+      // (30 * 3 seconds interval = ~90 seconds)
+      if (gps_fail_count % 30 == 0) {
+        ESP_LOGW(TAG, "GPS has no data for %lu reads, running diagnostics...",
+                 (unsigned long)gps_fail_count);
+        gps_neo7m_debug_status();
+      }
     }
 
     // Format JSON payload
@@ -117,9 +129,7 @@ static void sensor_task(void *pvParameters) {
         "\"longitude\":%.6f,"
         "\"altitude\":%.1f,"
         "\"speed\":%.2f,"
-        "\"course\":%.2f,"
-        "\"satellites\":%d,"
-        "\"hdop\":%.1f,"
+        "\"utc_time\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\","
         "\"valid\":%s"
         "}"
         "}",
@@ -131,9 +141,12 @@ static void sensor_task(void *pvParameters) {
         bme_data.heat_stable ? "true" : "false", mpu_data.accel_x,
         mpu_data.accel_y, mpu_data.accel_z, mpu_data.gyro_x, mpu_data.gyro_y,
         mpu_data.gyro_z, mpu_data.pitch, mpu_data.roll, mpu_data.yaw,
-        mpu_data.motion_detected ? "true" : "false", gps_data.latitude,
-        gps_data.longitude, gps_data.altitude, gps_data.speed, gps_data.course,
-        gps_data.satellites, gps_data.hdop, gps_data.valid ? "true" : "false");
+        mpu_data.motion_detected ? "true" : "false",         gps_data.latitude,
+        gps_data.longitude, gps_data.altitude, gps_data.speed_kmh,
+        gps_data.utc_date.year, gps_data.utc_date.month, gps_data.utc_date.day,
+        gps_data.utc_time.hour, gps_data.utc_time.minute,
+        gps_data.utc_time.second, gps_data.utc_time.millisecond,
+        gps_data.valid ? "true" : "false");
 
     if (len > 0 && len < sizeof(json_buffer)) {
       // Publish to MQTT
@@ -259,12 +272,14 @@ void app_main(void) {
     sensor_mpu6050_set_motion_threshold(0.2f); // 0.2g threshold
   }
 
-  // Initialize GPS
-  ESP_LOGI(TAG, "Initializing GPS...");
-  if (!gps_neo6m_init()) {
+  // Initialize GPS (NEO-7M with GPS + GLONASS support)
+  ESP_LOGI(TAG, "Initializing GPS NEO-7M...");
+  if (!gps_neo7m_init()) {
     ESP_LOGE(TAG, "Failed to initialize GPS");
   } else {
-    ESP_LOGI(TAG, "GPS initialized");
+    ESP_LOGI(TAG, "GPS NEO-7M initialized (GPS + GLONASS)");
+    // Run debug status to show wiring info and check for data
+    gps_neo7m_debug_status();
   }
 
   // Initialize camera
@@ -275,8 +290,8 @@ void app_main(void) {
     ESP_LOGI(TAG, "Camera initialized");
   }
 
-  // Create sensor task
-  xTaskCreatePinnedToCore(sensor_task, "sensor_task", 4096, NULL, 5,
+  // Create sensor task (8KB stack for GPS buffer + JSON formatting)
+  xTaskCreatePinnedToCore(sensor_task, "sensor_task", 8192, NULL, 5,
                           &sensor_task_handle,
                           1 // Core 1
   );

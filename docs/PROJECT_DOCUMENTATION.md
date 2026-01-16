@@ -13,7 +13,7 @@
 - **Architecture**: Component-based modular design
 
 ### 1.3. Tính Năng Chính
-- ✅ Thu thập dữ liệu từ nhiều cảm biến (BME680, MPU6050, GPS NEO-6M)
+- ✅ Thu thập dữ liệu từ nhiều cảm biến (BME680, MPU6050, GPS NEO-7M)
 - ✅ Chụp ảnh định kỳ với camera OV2640
 - ✅ Kết nối WiFi và MQTT để truyền dữ liệu
 - ✅ Upload ảnh lên Cloudinary qua HTTP
@@ -90,7 +90,7 @@ Trong các ứng dụng giám sát môi trường, nông nghiệp thông minh, h
   - Motion Detection: Boolean (threshold 0.2g)
 - **Calibration**: Tự động calibrate gyroscope khi khởi động (200 samples)
 
-#### FR-02.3: GPS NEO-6M
+#### FR-02.3: GPS NEO-7M
 - **Chức năng**: Xác định vị trí địa lý
 - **Giao tiếp**: UART1 (9600 baud)
 - **Protocol**: NMEA 0183
@@ -243,7 +243,7 @@ Trong các ứng dụng giám sát môi trường, nông nghiệp thông minh, h
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  3. Read GPS NEO-6M (Timeout: 1 second)                     │
+│  3. Read GPS NEO-7M (Timeout: 1 second)                     │
 │     - Parse NMEA sentences                                  │
 │     - Extract position, speed, satellites                   │
 └─────────────────────────────────────────────────────────────┘
@@ -512,9 +512,9 @@ rainguard/
 │   │   ├── include/sensor_mpu6050.h
 │   │   ├── sensor_mpu6050.c
 │   │   └── driver/mpu6050.*
-│   ├── gps_neo6m/              # GPS module
-│   │   ├── include/gps_neo6m.h
-│   │   └── gps_neo6m.c
+│   ├── gps_neo7m/              # GPS module
+│   │   ├── include/gps_neo7m.h
+│   │   └── gps_neo7m.c
 │   └── cam_config/             # OV2640 camera
 │       ├── include/cam_config.h
 │       ├── cam_config.c
@@ -589,7 +589,7 @@ idf.py -p COM8 flash monitor
 - [ESP32-S3 Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf)
 - [BME680 Datasheet](https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme680-ds001.pdf)
 - [MPU6050 Datasheet](https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Datasheet1.pdf)
-- [NEO-6M GPS Datasheet](https://www.u-blox.com/sites/default/files/products/documents/NEO-6_DataSheet_%28GPS.G6-HW-09005%29.pdf)
+- [NEO-7M GPS Datasheet](https://www.u-blox.com/sites/default/files/products/documents/NEO-6_DataSheet_%28GPS.G6-HW-09005%29.pdf)
 - [OV2640 Datasheet](https://www.uctronics.com/download/cam_module/OV2640DS.pdf)
 
 ### 8.2. Software Documentation

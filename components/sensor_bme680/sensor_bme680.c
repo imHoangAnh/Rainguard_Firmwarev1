@@ -42,11 +42,25 @@ static struct {
                    .gas_heater_temp = 320,
                    .gas_enabled = true};
 
-// IAQ calculation state (for accuracy tracking)
+// IAQ Algorithm Constants (based on reference implementation)
+#define IAQ_GAS_BASELINE_DEFAULT                                               \
+  50000.0f                     // Default baseline (adjusted for typical values)
+#define IAQ_BURN_IN_SAMPLES 50 // Samples needed for initial calibration
+#define IAQ_CALIBRATION_RATE 0.005f // Slow adaptation rate for baseline
+#define IAQ_GAS_HISTORY_SIZE 10     // Moving average window
+#define IAQ_TEMP_COMP_COEFF 0.003f  // 0.3% per °C deviation from 25°C
+#define IAQ_HUM_COMP_COEFF 0.015f   // 1.5% per %RH deviation from 40%
+
+// IAQ calculation state (enhanced for better accuracy)
 static struct {
   float gas_baseline;
-  uint32_t gas_baseline_count;
-  bool gas_baseline_valid;
+  float gas_sum;
+  float gas_min;
+  float gas_max;
+  float gas_history[IAQ_GAS_HISTORY_SIZE];
+  uint8_t gas_history_idx;
+  uint32_t samples_count;
+  bool baseline_valid;
   uint32_t stabilization_count;
 } iaq_state = {0};
 
@@ -113,92 +127,179 @@ static void bme68x_delay_us(uint32_t period, void *intf_ptr) {
 }
 
 /*============================================================================
- * IAQ Calculation
+ * IAQ Calculation (Improved algorithm based on reference implementation)
  *============================================================================*/
 
 /**
- * @brief Calculate IAQ using Bosch-inspired algorithm
+ * @brief Apply temperature and humidity compensation to gas resistance
+ * @param gas_resistance Raw gas resistance in Ohms
+ * @param temperature Temperature in Celsius
+ * @param humidity Relative humidity in %
+ * @return Compensated gas resistance
+ */
+static float compensate_gas_resistance(float gas_resistance, float temperature,
+                                       float humidity) {
+  // Compensation for temperature deviation from reference (25°C)
+  float temp_factor = 1.0f + IAQ_TEMP_COMP_COEFF * (temperature - 25.0f);
+
+  // Compensation for humidity deviation from reference (40% RH)
+  float hum_factor = 1.0f + IAQ_HUM_COMP_COEFF * (humidity - 40.0f);
+
+  // Apply compensation (higher humidity = lower apparent resistance)
+  float comp_resistance = gas_resistance * temp_factor / hum_factor;
+
+  return comp_resistance;
+}
+
+/**
+ * @brief Update gas baseline using exponential moving average
+ * @param gas_resistance Compensated gas resistance in Ohms
+ */
+static void update_gas_baseline(float gas_resistance) {
+  // Add to history buffer
+  iaq_state.gas_history[iaq_state.gas_history_idx] = gas_resistance;
+  iaq_state.gas_history_idx =
+      (iaq_state.gas_history_idx + 1) % IAQ_GAS_HISTORY_SIZE;
+
+  // Update running statistics
+  iaq_state.gas_sum += gas_resistance;
+  if (gas_resistance > iaq_state.gas_max) {
+    iaq_state.gas_max = gas_resistance;
+  }
+  if (gas_resistance < iaq_state.gas_min || iaq_state.gas_min == 0) {
+    iaq_state.gas_min = gas_resistance;
+  }
+
+  iaq_state.samples_count++;
+
+  // Update baseline with slow adaptation
+  if (iaq_state.samples_count <= IAQ_BURN_IN_SAMPLES) {
+    // During burn-in, use simple average
+    iaq_state.gas_baseline = iaq_state.gas_sum / iaq_state.samples_count;
+    iaq_state.baseline_valid = false;
+  } else {
+    iaq_state.baseline_valid = true;
+    // After burn-in, use exponential moving average with slow adaptation
+    // Only update if current reading suggests cleaner air (higher resistance)
+    if (gas_resistance > iaq_state.gas_baseline) {
+      iaq_state.gas_baseline =
+          iaq_state.gas_baseline * (1.0f - IAQ_CALIBRATION_RATE) +
+          gas_resistance * IAQ_CALIBRATION_RATE;
+    }
+  }
+}
+
+/**
+ * @brief Calculate IAQ score from compensated gas resistance
+ * @param comp_gas_resistance Compensated gas resistance in Ohms
+ * @return IAQ score (0-500, lower is better)
+ */
+static float calculate_iaq_score(float comp_gas_resistance) {
+  float baseline = iaq_state.gas_baseline;
+
+  // Use default baseline if not yet established
+  if (baseline <= 0) {
+    baseline = IAQ_GAS_BASELINE_DEFAULT;
+  }
+
+  // Calculate gas ratio (higher is better)
+  float gas_ratio = comp_gas_resistance / baseline;
+
+  // Convert to IAQ score (0-500 scale, lower is better)
+  float iaq;
+
+  if (gas_ratio >= 1.0f) {
+    // Clean air (ratio >= 1.0)
+    // IAQ = 0-50 for very clean, 50-100 for clean
+    float clamped_ratio = gas_ratio;
+    if (clamped_ratio > 2.0f)
+      clamped_ratio = 2.0f;
+    iaq = 50.0f * (2.0f - clamped_ratio);
+  } else if (gas_ratio >= 0.5f) {
+    // Slightly polluted (0.5 <= ratio < 1.0)
+    // IAQ = 50-150
+    iaq = 50.0f + 100.0f * (1.0f - gas_ratio) * 2.0f;
+  } else if (gas_ratio >= 0.2f) {
+    // Moderately polluted (0.2 <= ratio < 0.5)
+    // IAQ = 150-250
+    iaq = 150.0f + 100.0f * ((0.5f - gas_ratio) / 0.3f);
+  } else if (gas_ratio >= 0.1f) {
+    // Heavily polluted (0.1 <= ratio < 0.2)
+    // IAQ = 250-350
+    iaq = 250.0f + 100.0f * ((0.2f - gas_ratio) / 0.1f);
+  } else {
+    // Severely polluted (ratio < 0.1)
+    // IAQ = 350-500
+    float severity = (0.1f - gas_ratio) / 0.1f;
+    if (severity > 1.0f)
+      severity = 1.0f;
+    iaq = 350.0f + 150.0f * severity;
+  }
+
+  // Clamp to valid range
+  if (iaq < 0)
+    iaq = 0;
+  if (iaq > 500)
+    iaq = 500;
+
+  return iaq;
+}
+
+/**
+ * @brief Determine accuracy based on calibration progress
+ * @return Accuracy level (0-3)
+ */
+static uint8_t determine_accuracy(void) {
+  uint32_t samples = iaq_state.samples_count;
+
+  if (samples < IAQ_BURN_IN_SAMPLES / 4) {
+    return 0; // Unreliable
+  } else if (samples < IAQ_BURN_IN_SAMPLES / 2) {
+    return 1; // Low
+  } else if (samples < IAQ_BURN_IN_SAMPLES) {
+    return 2; // Medium
+  }
+  return 3; // High
+}
+
+/**
+ * @brief Calculate IAQ using improved algorithm based on reference
+ * implementation
  * @param temp Temperature in Celsius
  * @param hum Humidity in %
  * @param gas_res Gas resistance in Ohms
- * @param accuracy Output parameter for IAQ accuracy
- * @return IAQ value (0-500)
+ * @param accuracy Output parameter for IAQ accuracy (0-3)
+ * @return IAQ value (0-500, lower is better)
  */
 static float calculate_iaq(float temp, float hum, float gas_res,
                            uint8_t *accuracy) {
-  // Establish gas baseline (first 10 minutes of operation)
-  if (!iaq_state.gas_baseline_valid) {
-    if (iaq_state.gas_baseline_count < 600) { // ~10 minutes at 1Hz
-      iaq_state.gas_baseline += gas_res;
-      iaq_state.gas_baseline_count++;
-      *accuracy = 0; // Stabilizing
-      return 25.0f;  // Default value during stabilization
-    } else {
-      iaq_state.gas_baseline /= iaq_state.gas_baseline_count;
-      iaq_state.gas_baseline_valid = true;
-      *accuracy = 1; // Low accuracy
-    }
+  // Skip calculation if gas resistance is invalid
+  if (gas_res <= 0) {
+    *accuracy = 0;
+    return 0.0f;
   }
 
-  // Update baseline with exponential moving average (EMA)
-  if (gas_res > 0) {
-    iaq_state.gas_baseline =
-        (iaq_state.gas_baseline * 0.95f) + (gas_res * 0.05f);
+  // Step 1: Apply temperature/humidity compensation
+  float comp_gas = compensate_gas_resistance(gas_res, temp, hum);
+
+  // Step 2: Update baseline calibration
+  update_gas_baseline(comp_gas);
+
+  // Step 3: Calculate IAQ score
+  float iaq_score = calculate_iaq_score(comp_gas);
+
+  // Step 4: Determine accuracy
+  *accuracy = determine_accuracy();
+
+  // Debug logging for calibration progress
+  if (iaq_state.samples_count <= IAQ_BURN_IN_SAMPLES &&
+      (iaq_state.samples_count % 10 == 0)) {
+    ESP_LOGI(TAG, "IAQ Calibration: %lu/%d samples, baseline=%.0f Ohms",
+             (unsigned long)iaq_state.samples_count, IAQ_BURN_IN_SAMPLES,
+             iaq_state.gas_baseline);
   }
 
-  // Calculate humidity contribution
-  float hum_score = 0.0f;
-  if (hum >= 38.0f && hum <= 42.0f) {
-    hum_score = 0.25f * (hum - 38.0f); // Optimal range
-  } else if (hum < 38.0f) {
-    hum_score = 0.25f + 0.25f * ((38.0f - hum) / 38.0f);
-  } else {
-    hum_score = 0.5f + 0.5f * ((hum - 42.0f) / 58.0f);
-  }
-
-  // Calculate gas contribution (inverse relationship - lower resistance = worse
-  // air)
-  float gas_score = 0.0f;
-  if (iaq_state.gas_baseline > 0.0f && gas_res > 0.0f) {
-    float gas_ratio = gas_res / iaq_state.gas_baseline;
-    if (gas_ratio > 1.0f) {
-      gas_score = 0.0f; // Better than baseline
-    } else {
-      gas_score = (1.0f - gas_ratio) * 100.0f; // Worse than baseline
-    }
-  }
-
-  // Calculate temperature contribution
-  float temp_score = 0.0f;
-  if (temp >= 20.0f && temp <= 25.0f) {
-    temp_score = 0.0f; // Optimal
-  } else if (temp < 20.0f) {
-    temp_score = ((20.0f - temp) / 20.0f) * 50.0f;
-  } else {
-    temp_score = ((temp - 25.0f) / 15.0f) * 50.0f;
-  }
-
-  // Combine scores (weighted)
-  float iaq =
-      (gas_score * 0.5f) + (hum_score * 100.0f * 0.25f) + (temp_score * 0.25f);
-
-  // Clamp to 0-500 range
-  if (iaq > 500.0f)
-    iaq = 500.0f;
-  if (iaq < 0.0f)
-    iaq = 0.0f;
-
-  // Update accuracy based on stabilization time
-  if (iaq_state.stabilization_count < 3600) { // 1 hour at 1Hz
-    iaq_state.stabilization_count++;
-    if (*accuracy < 3) {
-      *accuracy = (iaq_state.stabilization_count > 1800) ? 3 : 2;
-    }
-  } else {
-    *accuracy = 3; // High accuracy
-  }
-
-  return iaq;
+  return iaq_score;
 }
 
 /*============================================================================
@@ -579,9 +680,14 @@ bool sensor_bme680_self_test(void) {
 
 void sensor_bme680_reset_iaq_baseline(void) {
   iaq_state.gas_baseline = 0.0f;
-  iaq_state.gas_baseline_count = 0;
-  iaq_state.gas_baseline_valid = false;
+  iaq_state.gas_sum = 0.0f;
+  iaq_state.gas_min = 0.0f;
+  iaq_state.gas_max = 0.0f;
+  iaq_state.gas_history_idx = 0;
+  iaq_state.samples_count = 0;
+  iaq_state.baseline_valid = false;
   iaq_state.stabilization_count = 0;
+  memset(iaq_state.gas_history, 0, sizeof(iaq_state.gas_history));
   ESP_LOGI(TAG, "IAQ baseline reset, recalibration will start");
 }
 
@@ -663,7 +769,7 @@ void sensor_bme680_debug_raw_data(void) {
       (uint16_t)((uint32_t)buff[15] * 4 | (((uint32_t)buff[16]) / 64));
   uint8_t gas_range = buff[14] & 0x0F;
 
-  ESP_LOGI(TAG, "=== RAW ADC DEBUG ===");
+  ESP_LOGI(TAG, "=== BME680 DEBUG ===");
   ESP_LOGI(TAG, "Status: 0x%02X, meas_index: %d, gas_index: %d", buff[0],
            buff[1], buff[0] & 0x0F);
   ESP_LOGI(TAG, "ADC Pressure: %lu (raw bytes: %02X %02X %02X)",
