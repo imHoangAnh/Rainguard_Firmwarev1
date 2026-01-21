@@ -1,9 +1,10 @@
 /**
  * @file app_network.c
- * @brief Network stack implementation: WiFi, MQTT, Cloudinary
+ * @brief Network implementation: WiFi, MQTT, Cloudinary
  */
 
 #include "app_network.h"
+#include "esp_crt_bundle.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -155,11 +156,10 @@ bool app_network_wait_for_wifi(uint8_t max_retries) {
                                          pdFALSE, pdFALSE, portMAX_DELAY);
 
   if (bits & WIFI_CONNECTED_BIT) {
-    ESP_LOGI(TAG, "Connected to WiFi AP");
+    ESP_LOGI(TAG, "Connected to WiFi");
     return true;
   } else if (bits & WIFI_FAIL_BIT) {
-    ESP_LOGE(TAG, "Failed to connect to WiFi AP after %d attempts",
-             max_retries);
+    ESP_LOGE(TAG, "Failed to connect to WiFi after %d attempts", max_retries);
     return false;
   } else {
     ESP_LOGE(TAG, "Unexpected WiFi event");
@@ -235,10 +235,13 @@ bool app_network_upload_image(camera_fb_t *fb) {
   offset += fb->len;
   memcpy(body + offset, part2, strlen(part2));
 
-  // HTTP client configuration
+  // HTTP client configuration with HTTPS support
   esp_http_client_config_t config = {
       .url = CLOUDINARY_UPLOAD_URL,
       .method = HTTP_METHOD_POST,
+      .crt_bundle_attach =
+          esp_crt_bundle_attach, // Use ESP-IDF certificate bundle for HTTPS
+      .timeout_ms = 30000,       // 30 second timeout for large image uploads
   };
 
   esp_http_client_handle_t client = esp_http_client_init(&config);

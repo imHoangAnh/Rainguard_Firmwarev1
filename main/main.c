@@ -40,6 +40,11 @@ static void sensor_task(void *pvParameters) {
   bme680_data_t bme_data = {0};
   mpu6050_data_t mpu_data = {0};
   gps_data_t gps_data = {0};
+  gps_data_t last_valid_gps = {0};
+  bool has_last_fix = false;
+  gps_data_t smoothed_gps = {0};
+  bool has_smoothed = false;
+  const float gps_smooth_alpha = 0.2f;
 
   char json_buffer[600]; // Increased for additional BME680 fields
 
@@ -75,34 +80,97 @@ static void sensor_task(void *pvParameters) {
       ESP_LOGW(TAG, "Failed to read MPU6050");
     }
 
-    // Read GPS (NEO-7M with GLONASS support, timeout 1 second)
+    // Read GPS (NEO-7M, timeout 1 second)
     static uint32_t gps_fail_count = 0;
-    if (gps_neo7m_read(&gps_data, 1000)) {
+    gps_data_t current_gps = {0};
+    if (gps_neo7m_read(&current_gps, 1000)) {
       gps_fail_count = 0; // Reset fail counter on success
-      if (gps_data.valid) {
+      gps_data = current_gps;
+
+      if (current_gps.valid) {
+        last_valid_gps = current_gps;
+        has_last_fix = true;
         ESP_LOGD(TAG,
                  "GPS: Lat=%.6f, Lon=%.6f, Alt=%.1fm, Speed=%.2f km/h, "
                  "Sats=%d, HDOP=%.1f",
-                 gps_data.latitude, gps_data.longitude, gps_data.altitude,
-                 gps_data.speed_kmh, gps_data.satellites_used, gps_data.dop.hdop);
+                 current_gps.latitude, current_gps.longitude,
+                 current_gps.altitude, current_gps.speed_kmh,
+                 current_gps.satellites_used, current_gps.hdop);
       } else {
-        ESP_LOGD(TAG, "GPS: No fix (Sats=%d)", gps_data.satellites_used);
+        ESP_LOGD(TAG, "GPS: No fix (Sats=%d)", current_gps.satellites_used);
       }
     } else {
       gps_fail_count++;
       ESP_LOGD(TAG, "GPS: No data (fail count: %lu)",
                (unsigned long)gps_fail_count);
+      if (has_last_fix) {
+        gps_data = last_valid_gps; // Use cached fix for smoother output
+        ESP_LOGD(TAG, "GPS: Using cached fix");
+      }
 
-      // Print detailed debug every 30 consecutive failures
-      // (30 * 3 seconds interval = ~90 seconds)
+      // Log warning every 30 consecutive failures (~90 seconds)
       if (gps_fail_count % 30 == 0) {
-        ESP_LOGW(TAG, "GPS has no data for %lu reads, running diagnostics...",
+        ESP_LOGW(TAG, "GPS has no data for %lu reads, check wiring!",
                  (unsigned long)gps_fail_count);
-        gps_neo7m_debug_status();
       }
     }
 
+    if (gps_data.valid) {
+      if (!has_smoothed) {
+        smoothed_gps = gps_data;
+        has_smoothed = true;
+      } else {
+        smoothed_gps.latitude =
+            smoothed_gps.latitude +
+            gps_smooth_alpha * (gps_data.latitude - smoothed_gps.latitude);
+        smoothed_gps.longitude =
+            smoothed_gps.longitude +
+            gps_smooth_alpha * (gps_data.longitude - smoothed_gps.longitude);
+        smoothed_gps.altitude =
+            smoothed_gps.altitude +
+            gps_smooth_alpha * (gps_data.altitude - smoothed_gps.altitude);
+        smoothed_gps.speed_kmh =
+            smoothed_gps.speed_kmh +
+            gps_smooth_alpha * (gps_data.speed_kmh - smoothed_gps.speed_kmh);
+      }
+
+      gps_data.latitude = smoothed_gps.latitude;
+      gps_data.longitude = smoothed_gps.longitude;
+      gps_data.altitude = smoothed_gps.altitude;
+      gps_data.speed_kmh = smoothed_gps.speed_kmh;
+    }
+
     // Format JSON payload
+    // Convert UTC to Vietnam timezone (UTC+7)
+    int vn_hour = gps_data.utc_time.hour + 7;
+    int vn_day = gps_data.utc_date.day;
+    int vn_month = gps_data.utc_date.month;
+    int vn_year = gps_data.utc_date.year;
+
+    if (vn_hour >= 24) {
+      vn_hour -= 24;
+      vn_day++;
+
+      // Days in each month (handle February with leap year)
+      int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+      // Check for leap year
+      if ((vn_year % 4 == 0 && vn_year % 100 != 0) || (vn_year % 400 == 0)) {
+        days_in_month[1] = 29;
+      }
+
+      // Handle month overflow
+      if (vn_month >= 1 && vn_month <= 12 &&
+          vn_day > days_in_month[vn_month - 1]) {
+        vn_day = 1;
+        vn_month++;
+        if (vn_month > 12) {
+          vn_month = 1;
+          vn_year++;
+        }
+      }
+    }
+
     int len = snprintf(
         json_buffer, sizeof(json_buffer),
         "{"
@@ -129,7 +197,8 @@ static void sensor_task(void *pvParameters) {
         "\"longitude\":%.6f,"
         "\"altitude\":%.1f,"
         "\"speed\":%.2f,"
-        "\"utc_time\":\"%04d-%02d-%02dT%02d:%02d:%02d.%03dZ\","
+        "\"date\":\"%04d-%02d-%02d\","
+        "\"time\":\"%02d:%02d:%02d.%03d\","
         "\"valid\":%s"
         "}"
         "}",
@@ -141,10 +210,9 @@ static void sensor_task(void *pvParameters) {
         bme_data.heat_stable ? "true" : "false", mpu_data.accel_x,
         mpu_data.accel_y, mpu_data.accel_z, mpu_data.gyro_x, mpu_data.gyro_y,
         mpu_data.gyro_z, mpu_data.pitch, mpu_data.roll, mpu_data.yaw,
-        mpu_data.motion_detected ? "true" : "false",         gps_data.latitude,
-        gps_data.longitude, gps_data.altitude, gps_data.speed_kmh,
-        gps_data.utc_date.year, gps_data.utc_date.month, gps_data.utc_date.day,
-        gps_data.utc_time.hour, gps_data.utc_time.minute,
+        mpu_data.motion_detected ? "true" : "false", gps_data.latitude,
+        gps_data.longitude, gps_data.altitude, gps_data.speed_kmh, vn_year,
+        vn_month, vn_day, vn_hour, gps_data.utc_time.minute,
         gps_data.utc_time.second, gps_data.utc_time.millisecond,
         gps_data.valid ? "true" : "false");
 
@@ -174,6 +242,13 @@ static void camera_task(void *pvParameters) {
   const TickType_t interval = pdMS_TO_TICKS(CAMERA_INTERVAL_MS);
 
   while (1) {
+    // Check if camera is initialized before attempting capture
+    if (!cam_config_is_initialized()) {
+      ESP_LOGW(TAG, "Camera not initialized, skipping capture");
+      vTaskDelayUntil(&last_wake_time, interval);
+      continue;
+    }
+
     camera_fb_t *fb = NULL;
 
     // Capture frame
@@ -253,13 +328,6 @@ void app_main(void) {
         100,                  // Gas wait time (ms)
         320                   // Gas heater temperature (°C)
     );
-
-    // Optional: Run self-test to verify sensor is working correctly
-    if (sensor_bme680_self_test()) {
-      ESP_LOGI(TAG, "BME680 self-test passed");
-    } else {
-      ESP_LOGW(TAG, "BME680 self-test failed - sensor may not work correctly");
-    }
   }
 
   if (!sensor_mpu6050_init()) {
@@ -272,14 +340,12 @@ void app_main(void) {
     sensor_mpu6050_set_motion_threshold(0.2f); // 0.2g threshold
   }
 
-  // Initialize GPS (NEO-7M with GPS + GLONASS support)
+  // Initialize GPS (NEO-7M)
   ESP_LOGI(TAG, "Initializing GPS NEO-7M...");
   if (!gps_neo7m_init()) {
     ESP_LOGE(TAG, "Failed to initialize GPS");
   } else {
-    ESP_LOGI(TAG, "GPS NEO-7M initialized (GPS + GLONASS)");
-    // Run debug status to show wiring info and check for data
-    gps_neo7m_debug_status();
+    ESP_LOGI(TAG, "GPS NEO-7M initialized");
   }
 
   // Initialize camera
