@@ -1,9 +1,9 @@
 /**
  * @file sensor_mpu6050.h
  * @brief MPU6050 accelerometer and gyroscope sensor driver
- * @details Optimized driver with Kalman filtering, motion detection, 
+ * @details Optimized driver with Kalman filtering, motion detection,
  *          and configurable full-scale ranges
- * 
+ *
  * Features:
  * - 6-axis motion sensing (accel + gyro)
  * - Kalman filter for attitude estimation (pitch/roll)
@@ -60,17 +60,17 @@ typedef enum {
  * @brief MPU6050 sensor data structure
  */
 typedef struct {
-  float accel_x;        // Acceleration X-axis in g
-  float accel_y;        // Acceleration Y-axis in g
-  float accel_z;        // Acceleration Z-axis in g
-  float gyro_x;         // Gyroscope X-axis in deg/s
-  float gyro_y;         // Gyroscope Y-axis in deg/s
-  float gyro_z;         // Gyroscope Z-axis in deg/s
-  float temperature;    // Temperature in Celsius
-  float pitch;          // Calculated pitch angle in degrees (Kalman filtered)
-  float roll;           // Calculated roll angle in degrees (Kalman filtered)
-  float yaw;            // Calculated yaw angle in degrees (integrated)
-  bool motion_detected; // Motion detection flag
+  float accel_x;         // Acceleration X-axis in g
+  float accel_y;         // Acceleration Y-axis in g
+  float accel_z;         // Acceleration Z-axis in g
+  float gyro_x;          // Gyroscope X-axis in deg/s
+  float gyro_y;          // Gyroscope Y-axis in deg/s
+  float gyro_z;          // Gyroscope Z-axis in deg/s
+  float temperature;     // Temperature in Celsius
+  float pitch;           // Calculated pitch angle in degrees (Kalman filtered)
+  float roll;            // Calculated roll angle in degrees (Kalman filtered)
+  float yaw;             // Calculated yaw angle in degrees (integrated)
+  float vibration;       // Vibration index (0-100 scale)
   uint32_t timestamp_us; // Measurement timestamp in microseconds
 } mpu6050_data_t;
 
@@ -122,7 +122,7 @@ bool sensor_mpu6050_read(mpu6050_data_t *data);
  * @return true on success, false on failure
  */
 bool sensor_mpu6050_read_raw(float *accel_x, float *accel_y, float *accel_z,
-                              float *gyro_x, float *gyro_y, float *gyro_z);
+                             float *gyro_x, float *gyro_y, float *gyro_z);
 
 /**
  * @brief Read temperature from internal sensor
@@ -130,12 +130,6 @@ bool sensor_mpu6050_read_raw(float *accel_x, float *accel_y, float *accel_z,
  * @return true on success, false on failure
  */
 bool sensor_mpu6050_read_temperature(float *temperature);
-
-/**
- * @brief Set motion detection threshold
- * @param threshold Acceleration threshold in g (default: 0.2g)
- */
-void sensor_mpu6050_set_motion_threshold(float threshold);
 
 /**
  * @brief Enable/disable low power mode
