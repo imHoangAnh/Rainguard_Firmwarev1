@@ -18,13 +18,13 @@
 #define WIFI_PASSWORD "250303hanh"
 
 /*
- * MQTT CONFIGURATION
+ * MQTT CONFIG
  */
 #define MQTT_BROKER_URI "mqtt://10.24.138.27:1883"
 #define MQTT_TOPIC_PREFIX "rainguard/data"
 
 /*
- * CLOUDINARY CONFIGURATION
+ * CLOUDINARY CONFIG
  */
 #define CLOUDINARY_UPLOAD_URL                                                  \
   "https://api.cloudinary.com/v1_1/dp5wo5yjr/image/upload"

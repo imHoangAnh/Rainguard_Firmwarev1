@@ -9,12 +9,14 @@
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "mqtt_client.h"
 #include "network_config.h"
 #include "nvs_flash.h"
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "net";
@@ -109,6 +111,54 @@ bool app_network_mqtt_publish(const char *json) {
   return esp_mqtt_client_publish(mqtt, topic, json, 0, 1, 0) >= 0;
 }
 
+// Maximum size for Cloudinary JSON response
+#define CLOUDINARY_RESPONSE_MAX_SIZE 2048
+
+/**
+ * @brief Publish Cloudinary response to MQTT wrapped in "image" object
+ * @param json_response JSON response string from Cloudinary
+ * @return true on success
+ */
+static bool publish_cloudinary_response(const char *json_response) {
+  if (!mqtt || !json_response)
+    return false;
+
+  // Allocate buffer for wrapped JSON:
+  // {"device_id":"XX","timestamp":XXXX,"image":{...}}
+  size_t response_len = strlen(json_response);
+  size_t wrapped_size = response_len + 256; // Extra space for wrapper
+  char *wrapped_json = malloc(wrapped_size);
+  if (!wrapped_json) {
+    ESP_LOGE(TAG, "Failed to allocate memory for wrapped JSON");
+    return false;
+  }
+
+  // Create wrapped JSON with device_id, timestamp, and image object
+  int len = snprintf(wrapped_json, wrapped_size,
+                     "{\"device_id\":\"%s\",\"timestamp\":%lld,\"image\":%s}",
+                     DEVICE_ID, (long long)(esp_timer_get_time() / 1000),
+                     json_response);
+
+  if (len < 0 || len >= wrapped_size) {
+    ESP_LOGE(TAG, "Failed to format wrapped JSON");
+    free(wrapped_json);
+    return false;
+  }
+
+  char topic[128];
+  snprintf(topic, sizeof(topic), "%s/%s", MQTT_TOPIC_PREFIX, DEVICE_ID);
+
+  int msg_id = esp_mqtt_client_publish(mqtt, topic, wrapped_json, 0, 1, 0);
+  free(wrapped_json);
+
+  if (msg_id >= 0) {
+    ESP_LOGI(TAG, "Published Cloudinary response to %s", topic);
+    return true;
+  }
+  ESP_LOGE(TAG, "Failed to publish Cloudinary response");
+  return false;
+}
+
 bool app_network_upload_image(camera_fb_t *fb) {
   if (!fb || !fb->buf)
     return false;
@@ -136,27 +186,80 @@ bool app_network_upload_image(camera_fb_t *fb) {
   memcpy(body + strlen(p1), fb->buf, fb->len);
   memcpy(body + strlen(p1) + fb->len, p2, strlen(p2));
 
+  // Allocate buffer for response
+  char *response_buffer = malloc(CLOUDINARY_RESPONSE_MAX_SIZE);
+  if (!response_buffer) {
+    free(body);
+    return false;
+  }
+  memset(response_buffer, 0, CLOUDINARY_RESPONSE_MAX_SIZE);
+
   esp_http_client_config_t cfg = {
       .url = CLOUDINARY_UPLOAD_URL,
       .method = HTTP_METHOD_POST,
       .crt_bundle_attach = esp_crt_bundle_attach,
       .timeout_ms = 30000,
+      .buffer_size = CLOUDINARY_RESPONSE_MAX_SIZE,
   };
 
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) {
     free(body);
+    free(response_buffer);
     return false;
   }
 
   esp_http_client_set_header(client, "Content-Type", ct);
   esp_http_client_set_post_field(client, (char *)body, len);
 
-  esp_err_t err = esp_http_client_perform(client);
-  bool ok = (err == ESP_OK && esp_http_client_get_status_code(client) == 200);
+  // Use open/write/fetch_headers/read for response capture
+  esp_err_t err = esp_http_client_open(client, len);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
+    esp_http_client_cleanup(client);
+    free(body);
+    free(response_buffer);
+    return false;
+  }
+
+  // Write POST body
+  int wlen = esp_http_client_write(client, (char *)body, len);
+  free(body); // Free body after writing
+
+  if (wlen < 0) {
+    ESP_LOGE(TAG, "Failed to write HTTP body");
+    esp_http_client_cleanup(client);
+    free(response_buffer);
+    return false;
+  }
+
+  // Fetch response headers
+  int content_length = esp_http_client_fetch_headers(client);
+  (void)content_length; // Suppress unused variable warning
+  int status_code = esp_http_client_get_status_code(client);
+
+  bool ok = false;
+
+  if (status_code == 200) {
+    // Read response body
+    int read_len = esp_http_client_read_response(
+        client, response_buffer, CLOUDINARY_RESPONSE_MAX_SIZE - 1);
+    if (read_len > 0) {
+      response_buffer[read_len] = '\0';
+      ESP_LOGI(TAG, "Cloudinary response (%d bytes): %.100s...", read_len,
+               response_buffer);
+
+      // Publish JSON response to MQTT
+      ok = publish_cloudinary_response(response_buffer);
+    } else {
+      ESP_LOGW(TAG, "No response body received from Cloudinary");
+    }
+  } else {
+    ESP_LOGE(TAG, "Cloudinary upload failed with status: %d", status_code);
+  }
 
   esp_http_client_cleanup(client);
-  free(body);
+  free(response_buffer);
   return ok;
 }
 
