@@ -1,10 +1,10 @@
 /**
  * @file buzzer_driver.c
- * @brief Simple buzzer driver for active buzzer
+ * @brief Passive buzzer driver using LEDC PWM
  */
 
 #include "buzzer_driver.h"
-#include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -12,111 +12,90 @@
 
 static const char *TAG = "buzzer";
 
+#define LEDC_MODE LEDC_LOW_SPEED_MODE
+#define LEDC_TIMER LEDC_TIMER_0
+#define LEDC_CHANNEL LEDC_CHANNEL_0
+#define LEDC_DUTY_RES LEDC_TIMER_10_BIT
+#define MAX_DUTY 1023
+
 static bool initialized = false;
-static TaskHandle_t buzzer_task_handle = NULL;
-static volatile int current_alert_code = 0;
+static TaskHandle_t task_handle = NULL;
+static volatile int alert_code = 0;
 
-// Timing configuration (milliseconds)
-#define BEEP_WARNING_ON 200
-#define BEEP_WARNING_OFF 300
-#define BEEP_ALARM_ON 500
-#define BEEP_ALARM_OFF 200
-#define WARNING_DURATION_MS 10000 // 10 seconds
-#define ALARM_DURATION_MS 30000   // 30 seconds
+static void buzzer_on(uint32_t freq) {
+  ledc_set_freq(LEDC_MODE, LEDC_TIMER, freq);
+  ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, (MAX_DUTY * BUZZER_VOLUME) / 100);
+  ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+}
 
-/**
- * @brief Buzzer task - handles alert patterns
- */
-static void buzzer_task(void *pvParameters) {
+static void buzzer_off(void) {
+  ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0);
+  ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+}
+
+static void buzzer_task(void *arg) {
   while (1) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    int code = alert_code;
 
-    int code = current_alert_code;
-
-    if (code == 0) {
-      // NORMAL - turn off
-      gpio_set_level(BUZZER_GPIO_PIN, 0);
-      ESP_LOGI(TAG, "Alert OFF");
-    } else if (code == 1) {
-      // DISTRACTED - beep for 10 seconds
-      ESP_LOGI(TAG, "DISTRACTED - beeping 10s");
-      uint32_t elapsed = 0;
-      while (elapsed < WARNING_DURATION_MS && current_alert_code == 1) {
-        gpio_set_level(BUZZER_GPIO_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_WARNING_ON));
-        gpio_set_level(BUZZER_GPIO_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_WARNING_OFF));
-        elapsed += BEEP_WARNING_ON + BEEP_WARNING_OFF;
+    if (code == 1) {
+      ESP_LOGI(TAG, "Warning 10s");
+      for (uint32_t t = 0; t < BUZZER_WARNING_DURATION_MS && alert_code == 1;
+           t += BUZZER_WARNING_ON_MS + BUZZER_WARNING_OFF_MS) {
+        buzzer_on(BUZZER_FREQ_WARNING);
+        vTaskDelay(pdMS_TO_TICKS(BUZZER_WARNING_ON_MS));
+        buzzer_off();
+        vTaskDelay(pdMS_TO_TICKS(BUZZER_WARNING_OFF_MS));
       }
-      gpio_set_level(BUZZER_GPIO_PIN, 0);
     } else if (code == 2) {
-      // DROWSY - urgent beep for 30 seconds
-      ESP_LOGI(TAG, "DROWSY - urgent beeping 30s!");
-      uint32_t elapsed = 0;
-      while (elapsed < ALARM_DURATION_MS && current_alert_code == 2) {
-        gpio_set_level(BUZZER_GPIO_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_ALARM_ON));
-        gpio_set_level(BUZZER_GPIO_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(BEEP_ALARM_OFF));
-        elapsed += BEEP_ALARM_ON + BEEP_ALARM_OFF;
+      ESP_LOGI(TAG, "Alarm 30s!");
+      for (uint32_t t = 0; t < BUZZER_ALARM_DURATION_MS && alert_code == 2;
+           t += BUZZER_ALARM_ON_MS + BUZZER_ALARM_OFF_MS) {
+        buzzer_on(BUZZER_FREQ_ALARM);
+        vTaskDelay(pdMS_TO_TICKS(BUZZER_ALARM_ON_MS));
+        buzzer_off();
+        vTaskDelay(pdMS_TO_TICKS(BUZZER_ALARM_OFF_MS));
       }
-      gpio_set_level(BUZZER_GPIO_PIN, 0);
     }
+    buzzer_off();
   }
 }
 
 bool buzzer_driver_init(void) {
-  if (initialized) {
+  if (initialized)
     return true;
-  }
 
-  // Configure GPIO
-  gpio_config_t io_conf = {
-      .pin_bit_mask = (1ULL << BUZZER_GPIO_PIN),
-      .mode = GPIO_MODE_OUTPUT,
-      .pull_up_en = GPIO_PULLUP_DISABLE,
-      .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_DISABLE,
+  ledc_timer_config_t timer = {
+      .speed_mode = LEDC_MODE,
+      .timer_num = LEDC_TIMER,
+      .duty_resolution = LEDC_DUTY_RES,
+      .freq_hz = BUZZER_FREQ_WARNING,
+      .clk_cfg = LEDC_AUTO_CLK,
   };
+  ESP_ERROR_CHECK(ledc_timer_config(&timer));
 
-  if (gpio_config(&io_conf) != ESP_OK) {
-    ESP_LOGE(TAG, "GPIO config failed");
-    return false;
-  }
+  ledc_channel_config_t channel = {
+      .speed_mode = LEDC_MODE,
+      .channel = LEDC_CHANNEL,
+      .timer_sel = LEDC_TIMER,
+      .gpio_num = BUZZER_GPIO_PIN,
+      .duty = 0,
+      .hpoint = 0,
+  };
+  ESP_ERROR_CHECK(ledc_channel_config(&channel));
 
-  gpio_set_level(BUZZER_GPIO_PIN, 0);
-
-  // Create task
-  if (xTaskCreate(buzzer_task, "buzzer", 2048, NULL, 4, &buzzer_task_handle) !=
-      pdPASS) {
-    ESP_LOGE(TAG, "Task create failed");
-    return false;
-  }
-
+  xTaskCreate(buzzer_task, "buzzer", 2048, NULL, 4, &task_handle);
   initialized = true;
-  ESP_LOGI(TAG, "Buzzer ready on GPIO %d", BUZZER_GPIO_PIN);
+  ESP_LOGI(TAG, "Ready GPIO%d", BUZZER_GPIO_PIN);
   return true;
 }
 
-void buzzer_driver_set_alert_code(int alert_code) {
-  if (!initialized) {
+void buzzer_driver_set_alert_code(int code) {
+  if (!initialized)
     return;
-  }
-
-  if (alert_code < 0)
-    alert_code = 0;
-  if (alert_code > 2)
-    alert_code = 2;
-
-  current_alert_code = alert_code;
-
-  // If alert_code is 0, turn off buzzer IMMEDIATELY
-  if (alert_code == 0) {
-    gpio_set_level(BUZZER_GPIO_PIN, 0);
-    ESP_LOGI(TAG, "Buzzer OFF immediately");
-  }
-
-  if (buzzer_task_handle != NULL) {
-    xTaskNotifyGive(buzzer_task_handle);
-  }
+  alert_code = (code < 0) ? 0 : (code > 2) ? 2 : code;
+  if (alert_code == 0)
+    buzzer_off();
+  if (task_handle)
+    xTaskNotifyGive(task_handle);
 }
