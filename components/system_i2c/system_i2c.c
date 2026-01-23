@@ -2,7 +2,7 @@
  * @file system_i2c.c
  * @brief Thread-safe I2C master bus implementation
  * @details Optimized for ESP-IDF with modern i2c_master API
- * 
+ *
  * Improvements:
  * - Proper mutex handling for thread safety
  * - Device add/remove helpers for sensors
@@ -179,13 +179,13 @@ esp_err_t system_i2c_lock(uint32_t timeout_ms) {
   }
 
   uint32_t timeout = (timeout_ms == 0) ? DEFAULT_MUTEX_TIMEOUT_MS : timeout_ms;
-  
+
   if (xSemaphoreTake(i2c_mutex, pdMS_TO_TICKS(timeout)) != pdTRUE) {
-    ESP_LOGW(TAG, "Failed to acquire I2C mutex within %lu ms", 
+    ESP_LOGW(TAG, "Failed to acquire I2C mutex within %lu ms",
              (unsigned long)timeout);
     return ESP_ERR_TIMEOUT;
   }
-  
+
   return ESP_OK;
 }
 
@@ -194,12 +194,12 @@ esp_err_t system_i2c_unlock(void) {
     ESP_LOGE(TAG, "I2C mutex not initialized");
     return ESP_ERR_INVALID_STATE;
   }
-  
+
   if (xSemaphoreGive(i2c_mutex) != pdTRUE) {
     ESP_LOGE(TAG, "Failed to release I2C mutex");
     return ESP_FAIL;
   }
-  
+
   return ESP_OK;
 }
 
@@ -208,12 +208,12 @@ bool system_i2c_is_initialized(void) {
 }
 
 esp_err_t system_i2c_add_device(uint8_t dev_addr, uint32_t scl_speed_hz,
-                                 i2c_master_dev_handle_t *dev_handle) {
+                                i2c_master_dev_handle_t *dev_handle) {
   if (i2c_bus_handle == NULL) {
     ESP_LOGE(TAG, "I2C bus not initialized");
     return ESP_ERR_INVALID_STATE;
   }
-  
+
   if (dev_handle == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -224,15 +224,16 @@ esp_err_t system_i2c_add_device(uint8_t dev_addr, uint32_t scl_speed_hz,
       .scl_speed_hz = scl_speed_hz,
   };
 
-  esp_err_t ret = i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, dev_handle);
+  esp_err_t ret =
+      i2c_master_bus_add_device(i2c_bus_handle, &dev_cfg, dev_handle);
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to add device 0x%02X: %s", dev_addr, 
+    ESP_LOGE(TAG, "Failed to add device 0x%02X: %s", dev_addr,
              esp_err_to_name(ret));
   } else {
-    ESP_LOGD(TAG, "Added device 0x%02X at %lu Hz", dev_addr, 
+    ESP_LOGD(TAG, "Added device 0x%02X at %lu Hz", dev_addr,
              (unsigned long)scl_speed_hz);
   }
-  
+
   return ret;
 }
 
@@ -240,11 +241,11 @@ esp_err_t system_i2c_remove_device(i2c_master_dev_handle_t dev_handle) {
   if (dev_handle == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
-  
+
   esp_err_t ret = i2c_master_bus_rm_device(dev_handle);
   if (ret != ESP_OK) {
     ESP_LOGW(TAG, "Failed to remove device: %s", esp_err_to_name(ret));
   }
-  
+
   return ret;
 }

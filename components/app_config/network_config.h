@@ -21,8 +21,8 @@
  * MQTT CONFIG
  */
 #define MQTT_BROKER_URI "mqtt://10.110.37.27:1883"
-#define MQTT_TOPIC_PREFIX "rainguard/data"
-#define MQTT_ALERT_TOPIC "rainguard/alert/" DEVICE_ID
+#define MQTT_TOPIC_PREFIX "trainguard/data"
+#define MQTT_ALERT_TOPIC "trainguard/alert/" DEVICE_ID
 
 /*
  * CLOUDINARY CONFIG
@@ -30,7 +30,7 @@
 #define CLOUDINARY_UPLOAD_URL                                                  \
   "https://api.cloudinary.com/v1_1/dp5wo5yjr/image/upload"
 
-#define CLOUDINARY_UPLOAD_PRESET "RainGuard"
+#define CLOUDINARY_UPLOAD_PRESET "TrainGuard"
 
 /*
  * SENSOR INTERVALS (milliseconds)

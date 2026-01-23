@@ -6,9 +6,9 @@
 #ifndef APP_NETWORK_H
 #define APP_NETWORK_H
 
+#include "cam_config.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "cam_config.h"
 
 #ifdef __cplusplus
 extern "C" {

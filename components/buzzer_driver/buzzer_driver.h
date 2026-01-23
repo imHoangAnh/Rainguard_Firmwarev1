@@ -17,13 +17,8 @@
 extern "C" {
 #endif
 
-// =============================================================================
-// BUZZER CONFIGURATION - ADJUST HERE
-// =============================================================================
-
 /**
  * @brief Volume level (0-100%)
- * 50% is usually loud enough for passive buzzers
  */
 #define BUZZER_VOLUME 100
 
@@ -51,10 +46,6 @@ extern "C" {
 
 #define BUZZER_ALARM_ON_MS 150
 #define BUZZER_ALARM_OFF_MS 100
-
-// =============================================================================
-// API FUNCTIONS
-// =============================================================================
 
 /**
  * @brief Initialize passive buzzer (PWM)

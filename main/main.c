@@ -1,6 +1,6 @@
 /**
  * @file main.c
- * @brief RainGuard Firmware - Main application
+ * @brief TrainGuard Firmware - Main application
  */
 
 #include "esp_log.h"
@@ -131,6 +131,8 @@ static void sensor_task(void *pvParameters) {
     if (len > 0 && len < sizeof(json_buffer)) {
       if (app_network_mqtt_publish(json_buffer)) {
         ESP_LOGI(TAG, "MQTT published successfully");
+      } else {
+        ESP_LOGE(TAG, "MQTT published unsuccessfully");
       }
     }
 
@@ -163,7 +165,7 @@ static void camera_task(void *pvParameters) {
 }
 
 void app_main(void) {
-  ESP_LOGI(TAG, "RainGuard starting...");
+  ESP_LOGI(TAG, "TrainGuard starting...");
 
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||

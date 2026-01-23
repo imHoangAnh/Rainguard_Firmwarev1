@@ -1,6 +1,6 @@
 /**
  * @file pin_config.h
- * @brief Pin definitions for RainGuard Firmware
+ * @brief Pin definitions for TrainGuard Firmware
  * @details Hardware pin assignments for ESP32-S3
  */
 

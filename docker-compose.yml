@@ -3,7 +3,7 @@ version: '3.8'
 services:
   mosquitto:
     image: eclipse-mosquitto:latest
-    container_name: rainguard-mqtt-broker
+    container_name: trainguard-mqtt-broker
     restart: unless-stopped
     ports:
       - "1883:1883" # MQTT

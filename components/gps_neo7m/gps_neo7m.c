@@ -9,7 +9,7 @@
  * - VTG: Course Over Ground and Ground Speed
  * - GSA: DOP values
  *
- * @author RainGuard Team
+ * @author TrainGuard Team
  * @version 3.0.0 (Ultra-Lightweight)
  * @date 2026-01-19
  */

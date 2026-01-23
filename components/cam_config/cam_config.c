@@ -17,7 +17,8 @@ static bool camera_initialized = false;
 static void cam_power_sequence(void) {
   if (CAM_PIN_PWDN >= 0) {
     gpio_config_t conf = {
-        .pin_bit_mask = (1ULL << (uint32_t)CAM_PIN_PWDN),
+        .pin_bit_mask =
+            (CAM_PIN_PWDN >= 0 ? (1ULL << (uint32_t)CAM_PIN_PWDN) : 0),
         .mode = GPIO_MODE_OUTPUT,
     };
     gpio_config(&conf);
@@ -26,7 +27,8 @@ static void cam_power_sequence(void) {
 
   if (CAM_PIN_RESET >= 0) {
     gpio_config_t conf = {
-        .pin_bit_mask = (1ULL << (uint32_t)CAM_PIN_RESET),
+        .pin_bit_mask =
+            (CAM_PIN_RESET >= 0 ? (1ULL << (uint32_t)CAM_PIN_RESET) : 0),
         .mode = GPIO_MODE_OUTPUT,
     };
     gpio_config(&conf);

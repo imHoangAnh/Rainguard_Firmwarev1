@@ -1,4 +1,4 @@
-# 🌧️ RainGuard Firmware
+# 🌧️ TrainGuard Firmware
 
 <div align="center">
 
@@ -17,7 +17,7 @@
 
 ## 📖 Overview
 
-**RainGuard** is an ESP32-S3 based firmware that collects environmental data from multiple sensors and transmits it via MQTT in real-time. Designed for weather monitoring stations, and environmental tracking applications.
+**TrainGuard** is an ESP32-S3 based firmware that collects environmental data from multiple sensors and transmits it via MQTT in real-time. Designed for weather monitoring stations, and environmental tracking applications.
 
 ### Key Capabilities
 - 🌡️ **Environmental Monitoring** - Temperature, humidity, pressure, and air quality
@@ -96,8 +96,8 @@ Camera OV2640:
 ### Clone Repository
 
 ```bash
-git clone https://github.com/imHoangAnh/Rainguard_Firmware.git
-cd Rainguard_Firmware
+git clone https://github.com/imHoangAnh/TrainGuard_Firmware.git
+cd TrainGuard_Firmware
 ```
 
 ### Build & Flash
@@ -134,7 +134,7 @@ Edit `components/app_config/network_config.h`:
 
 // MQTT Configuration
 #define MQTT_BROKER_URI "mqtt://192.168.1.100:1883"
-#define MQTT_TOPIC_PREFIX "rainguard/data"
+#define MQTT_TOPIC_PREFIX "trainguard/data"
 
 // Cloudinary Configuration
 #define CLOUDINARY_UPLOAD_URL "https://api.cloudinary.com/v1_1/yourcloud/image/upload"
@@ -156,10 +156,10 @@ Edit `components/app_config/pin_config.h` if using different GPIO pins.
 ### Topic Structure
 
 ```
-rainguard/data/{device_id}
+trainguard/data/{device_id}
 ```
 
-Example: `rainguard/data/01`
+Example: `trainguard/data/01`
 
 ### Payload Schema
 
@@ -240,7 +240,7 @@ The broker will be available at:
 ## 📁 Project Structure
 
 ```
-Rainguard_Firmware/
+TrainGuard_Firmware/
 ├── main/
 │   └── main.c                  # Application entry point
 ├── components/
@@ -272,7 +272,7 @@ idf.py -p COM8 monitor
 ### Sample Output
 
 ```
-I (1234) main: RainGuard starting...
+I (1234) main: TrainGuard starting...
 I (2345) net: MQTT connected
 I (3456) main: MQTT published successfully
 I (4567) main: Captured: 640x480, 25340 bytes
@@ -283,7 +283,7 @@ I (4890) main: Uploaded image to Cloudinary successfully
 
 ```bash
 # Using mosquitto_sub
-mosquitto_sub -h localhost -t "rainguard/data/#" -v
+mosquitto_sub -h localhost -t "trainguard/data/#" -v
 ```
 
 ---

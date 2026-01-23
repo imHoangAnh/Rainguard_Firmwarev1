@@ -8,7 +8,7 @@
  * - Position, speed, heading, time/date
  * - Optimized for sending data to backend
  *
- * @author RainGuard Team
+ * @author TrainGuard Team
  * @version 3.0.0 (Ultra-Lightweight)
  * @date 2026-01-19
  */

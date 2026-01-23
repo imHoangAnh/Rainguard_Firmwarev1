@@ -1,4 +1,4 @@
-# RainGuard Firmware - SDK Configuration Defaults
+# TrainGuard Firmware - SDK Configuration Defaults
 # Target: ESP32-S3-WROOM N16R8 (16MB Flash, 8MB PSRAM)
 
 # Target Configuration
@@ -47,6 +47,8 @@ CONFIG_MQTT_TRANSPORT_WEBSOCKET=y
 CONFIG_MQTT_TRANSPORT_WEBSOCKET_SECURE=y
 
 # Logging
-CONFIG_LOG_DEFAULT_LEVEL_DEBUG=y
+# Logging
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
 
