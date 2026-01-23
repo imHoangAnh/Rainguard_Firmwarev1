@@ -1,9 +1,11 @@
 /**
  * @file app_network.c
- * @brief WiFi, MQTT and Cloudinary upload
+ * @brief WiFi, MQTT, Cloudinary upload, and Alert subscription
  */
 
 #include "app_network.h"
+#include "buzzer_driver.h"
+#include "cJSON.h"
 #include "esp_crt_bundle.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -46,13 +48,75 @@ static void wifi_handler(void *arg, esp_event_base_t base, int32_t id,
   }
 }
 
+/**
+ * @brief Parse alert JSON and trigger buzzer
+ * @param json_str JSON string like {"alert_code": 2}
+ */
+static void handle_alert_message(const char *json_str, int len) {
+  // Create null-terminated copy
+  char *json_copy = malloc(len + 1);
+  if (!json_copy) {
+    ESP_LOGE(TAG, "Failed to allocate memory for alert JSON");
+    return;
+  }
+  memcpy(json_copy, json_str, len);
+  json_copy[len] = '\0';
+
+  cJSON *root = cJSON_Parse(json_copy);
+  if (root == NULL) {
+    ESP_LOGE(TAG, "Failed to parse alert JSON: %s", json_copy);
+    free(json_copy);
+    return;
+  }
+
+  cJSON *alert_code = cJSON_GetObjectItem(root, "alert_code");
+  if (cJSON_IsNumber(alert_code)) {
+    int code = alert_code->valueint;
+    ESP_LOGI(TAG, "Received alert_code: %d", code);
+    buzzer_driver_set_alert_code(code);
+  } else {
+    ESP_LOGW(TAG, "alert_code not found or invalid in JSON");
+  }
+
+  cJSON_Delete(root);
+  free(json_copy);
+}
+
 static void mqtt_handler(void *args, esp_event_base_t base, int32_t id,
                          void *data) {
   (void)args;
   (void)base;
-  (void)data;
-  if (id == MQTT_EVENT_CONNECTED)
+  esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)data;
+
+  switch (id) {
+  case MQTT_EVENT_CONNECTED:
     ESP_LOGI(TAG, "MQTT connected");
+    // Subscribe to alert topic
+    int msg_id = esp_mqtt_client_subscribe(mqtt, MQTT_ALERT_TOPIC, 1);
+    ESP_LOGI(TAG, "Subscribed to %s, msg_id=%d", MQTT_ALERT_TOPIC, msg_id);
+    break;
+
+  case MQTT_EVENT_DATA:
+    ESP_LOGD(TAG, "MQTT data received on topic: %.*s", event->topic_len,
+             event->topic);
+    // Check if this is alert topic
+    if (event->topic_len > 0 &&
+        strncmp(event->topic, MQTT_ALERT_TOPIC, event->topic_len) == 0) {
+      handle_alert_message(event->data, event->data_len);
+    }
+    break;
+
+  case MQTT_EVENT_DISCONNECTED:
+    ESP_LOGW(TAG, "MQTT disconnected");
+    break;
+
+  case MQTT_EVENT_ERROR:
+    ESP_LOGE(TAG, "MQTT error");
+    break;
+
+  default:
+    break;
+  }
 }
 
 bool app_network_init(void) {

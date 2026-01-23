@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "app_network.h"
+#include "buzzer_driver.h"
 #include "cam_config.h"
 #include "gps_neo7m.h"
 #include "network_config.h"
@@ -198,6 +199,11 @@ void app_main(void) {
 
   gps_neo7m_init();
   cam_config_init();
+
+  // Initialize buzzer for alert system
+  if (!buzzer_driver_init()) {
+    ESP_LOGW(TAG, "Buzzer init failed - alerts will be disabled");
+  }
 
   xTaskCreatePinnedToCore(sensor_task, "sensor_task", 8192, NULL, 5,
                           &sensor_task_handle, 1);

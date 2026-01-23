@@ -51,6 +51,9 @@ extern "C" {
 #define CAM_PIN_RESET -1 // Not connected
 #define CAM_PIN_PWDN -1  // Not connected
 
+// Buzzer Configuration
+#define BUZZER_GPIO_PIN 45
+
 // Sensor I2C Addresses
 #ifndef BME680_I2C_ADDR
 #define BME680_I2C_ADDR 0x77

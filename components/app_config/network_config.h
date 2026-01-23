@@ -20,8 +20,9 @@
 /*
  * MQTT CONFIG
  */
-#define MQTT_BROKER_URI "mqtt://10.24.138.27:1883"
+#define MQTT_BROKER_URI "mqtt://10.110.37.27:1883"
 #define MQTT_TOPIC_PREFIX "rainguard/data"
+#define MQTT_ALERT_TOPIC "rainguard/alert/" DEVICE_ID
 
 /*
  * CLOUDINARY CONFIG
