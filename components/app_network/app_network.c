@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *TAG = "net";
+static const char *TAG = "network";
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1

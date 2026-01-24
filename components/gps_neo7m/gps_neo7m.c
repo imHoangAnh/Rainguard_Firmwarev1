@@ -29,7 +29,7 @@
 // CONSTANTS
 // =============================================================================
 
-static const char *TAG = "gps";
+static const char *TAG = "Neo7M";
 
 #define NMEA_MAX_FIELDS 16
 #define NMEA_MAX_LEN 82
