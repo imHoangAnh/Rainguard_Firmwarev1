@@ -30,6 +30,7 @@ static const char *TAG = "net";
 static EventGroupHandle_t wifi_event_group;
 static int retry_num = 0;
 static esp_mqtt_client_handle_t mqtt = NULL;
+static bool mqtt_connected = false;
 
 static void wifi_handler(void *arg, esp_event_base_t base, int32_t id,
                          void *data) {

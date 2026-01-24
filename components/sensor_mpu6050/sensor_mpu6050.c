@@ -201,7 +201,7 @@ bool sensor_mpu6050_init(void) {
     return false;
   }
 
-  ESP_LOGI(TAG, "MPU6050 found with WHO_AM_I: 0x%02X", who_am_i);
+  ESP_LOGI(TAG, "MPU6050 found with Address: 0x%02X", who_am_i);
 
   // Reset device
   ret = mpu6050_write_reg(MPU6050_REG_PWR_MGMT_1, MPU6050_PWR_MGMT_1_RESET);
