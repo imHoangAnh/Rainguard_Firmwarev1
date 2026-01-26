@@ -14,7 +14,7 @@
 #include <math.h>
 #include <string.h>
 
-static const char *TAG = "sensor_mpu6050";
+static const char *TAG = "mpu6050";
 static i2c_master_dev_handle_t mpu6050_handle = NULL;
 
 // MPU6050 Register Addresses

@@ -11,7 +11,7 @@
 #include "freertos/task.h"
 #include "pin_config.h"
 
-static const char *TAG = "cam";
+static const char *TAG = "camera";
 static bool camera_initialized = false;
 
 static void cam_power_sequence(void) {
