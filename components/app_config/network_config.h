@@ -20,7 +20,7 @@
 /*
  * MQTT CONFIG
  */
-#define MQTT_BROKER_URI "mqtt://10.110.37.27:1883"   ///     10.110.37.27 10.110.37.27
+#define MQTT_BROKER_URI "mqtt://10.226.242.27:1883"
 #define MQTT_TOPIC_PREFIX "trainguard/data"
 #define MQTT_ALERT_TOPIC "trainguard/alert/" DEVICE_ID
 
